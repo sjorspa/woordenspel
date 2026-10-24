@@ -10,6 +10,7 @@ public static class DependencyInjection
         services.TryAddSingleton(GameSetup.Wordfeud);
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<GameService>();
+        services.AddScoped<LobbyService>();
         services.AddScoped<AccountService>();
         services.AddScoped<GuestNameGenerator>();
         return services;

@@ -22,6 +22,19 @@ public sealed record GameDto(
     IReadOnlyList<RackTileDto> Rack);
 
 /// <param name="IsGuest">Een gast heeft geen wachtwoord en kan niet opnieuw inloggen.</param>
+/// <summary>Een uitnodiging die wacht op een tegenstander.</summary>
+/// <param name="OpponentId">De uitgedaagde speler; null bij een open spel.</param>
+/// <param name="IsMine">Of de bekijker deze uitnodiging zelf heeft gemaakt.</param>
+public sealed record SeekDto(
+    Guid Id,
+    Guid CreatorId,
+    string CreatorName,
+    Guid? OpponentId,
+    string? OpponentName,
+    bool IsMine,
+    long? TimePerPlayerMs,
+    DateTimeOffset CreatedAt);
+
 public sealed record UserDto(Guid Id, string Username, bool IsGuest = false);
 
 public sealed record GameSummaryDto(

@@ -12,6 +12,8 @@ public static class RealtimeSetup
             options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
         services.AddSingleton<IUserIdProvider, UserIdProvider>();
         services.AddSingleton<IGameNotifier, SignalRGameNotifier>();
+        services.AddSingleton<PresenceTracker>();
+        services.AddSingleton<IPresence>(sp => sp.GetRequiredService<PresenceTracker>());
 
         services.Configure<TurnExpiryOptions>(configuration.GetSection(TurnExpiryOptions.SectionName));
         services.AddHostedService<TurnExpiryWorker>();

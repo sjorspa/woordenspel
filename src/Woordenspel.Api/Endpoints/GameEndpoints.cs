@@ -12,7 +12,6 @@ public static class GameEndpoints
     public static IEndpointRouteBuilder MapGameEndpoints(this IEndpointRouteBuilder app)
     {
         var games = app.MapGroup("/api/games").WithTags("Games").RequireAuthorization();
-        games.MapPost("/", CreateGame);
         games.MapGet("/", ListGames);
         games.MapGet("/{gameId:guid}", GetGame);
         games.MapPost("/{gameId:guid}/preview", Preview);
@@ -21,13 +20,6 @@ public static class GameEndpoints
         games.MapPost("/{gameId:guid}/pass", Pass);
         games.MapPost("/{gameId:guid}/resign", Resign);
         return app;
-    }
-
-    private static async Task<Created<GameDto>> CreateGame(
-        CreateGameRequest request, ClaimsPrincipal user, GameService service, CancellationToken cancellationToken)
-    {
-        var game = await service.CreateGameAsync(user.GetUserId(), request.Opponent ?? string.Empty, cancellationToken);
-        return TypedResults.Created($"/api/games/{game.Id}", game);
     }
 
     private static async Task<Ok<IReadOnlyList<GameSummaryDto>>> ListGames(

@@ -5,6 +5,15 @@ public sealed class GameNotFoundException(Guid gameId) : Exception($"Spel {gameI
     public Guid GameId { get; } = gameId;
 }
 
+public sealed class SeekNotFoundException(Guid seekId)
+    : Exception("Dit spel is niet meer beschikbaar; misschien was iemand anders je voor.")
+{
+    public Guid SeekId { get; } = seekId;
+}
+
+public sealed class SeekUnavailableException(string creatorName)
+    : Exception($"{creatorName} is niet meer online.");
+
 public sealed class UserNotFoundException(string username) : Exception($"Gebruiker '{username}' bestaat niet.");
 
 public sealed class UsernameTakenException(string username) : Exception($"De gebruikersnaam '{username}' is al in gebruik.");

@@ -25,6 +25,7 @@ public static class DependencyInjection
 
         services.AddScoped<IGameRepository, EfGameRepository>();
         services.AddScoped<IUserRepository, EfUserRepository>();
+        services.AddSingleton<ISeekRepository, InMemorySeekRepository>();
         services.AddScoped<GameSnapshotSerializer>();
         services.AddSingleton<IPasswordHasher, IdentityPasswordHasher>();
         services.AddSingleton<IRandomizer, SystemRandomizer>();

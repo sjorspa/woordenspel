@@ -6,8 +6,10 @@ public sealed record LoginRequest(string? Username, string? Password);
 
 public sealed record AuthResponse(Guid UserId, string Username, string Token, DateTimeOffset ExpiresAt, bool IsGuest = false);
 
-/// <param name="Opponent">De gebruikersnaam van de tegenstander.</param>
-public sealed record CreateGameRequest(string? Opponent);
+/// <param name="Opponent">
+/// De gebruikersnaam van de speler die je uitdaagt; leeg voor een open spel waaraan iedereen mag meedoen.
+/// </param>
+public sealed record CreateSeekRequest(string? Opponent);
 
 public sealed record PlaceTilesRequest(IReadOnlyList<TilePlacementDto>? Tiles);
 

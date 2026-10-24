@@ -1,6 +1,7 @@
 using Woordenspel.Application.Abstractions;
 using Woordenspel.Contracts;
 using Woordenspel.Domain.Games;
+using Woordenspel.Domain.Seeks;
 using Woordenspel.Domain.Users;
 using Woordenspel.TestSupport;
 
@@ -59,11 +60,64 @@ internal sealed class FakeGameNotifier : IGameNotifier
 {
     public List<(Guid PlayerId, GameDto Game)> Sent { get; } = [];
 
+    public List<(Guid PlayerId, GameDto Game)> Started { get; } = [];
+
+    public int SeeksChangedCount { get; set; }
+
     public Task GameUpdatedAsync(Guid playerId, GameDto game, CancellationToken cancellationToken)
     {
         Sent.Add((playerId, game));
         return Task.CompletedTask;
     }
+
+    public Task GameStartedAsync(Guid playerId, GameDto game, CancellationToken cancellationToken)
+    {
+        Started.Add((playerId, game));
+        return Task.CompletedTask;
+    }
+
+    public Task SeeksChangedAsync(CancellationToken cancellationToken)
+    {
+        SeeksChangedCount++;
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeSeekRepository : ISeekRepository
+{
+    private readonly Dictionary<Guid, GameSeek> _seeks = [];
+
+    public Task<IReadOnlyList<GameSeek>> ListAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<GameSeek>>(_seeks.Values.ToList());
+
+    public Task<GameSeek?> FindAsync(Guid seekId, CancellationToken cancellationToken) =>
+        Task.FromResult(_seeks.GetValueOrDefault(seekId));
+
+    public Task AddAsync(GameSeek seek, CancellationToken cancellationToken)
+    {
+        _seeks[seek.Id] = seek;
+        return Task.CompletedTask;
+    }
+
+    public Task<GameSeek?> TakeAsync(Guid seekId, CancellationToken cancellationToken) =>
+        Task.FromResult(_seeks.Remove(seekId, out var seek) ? seek : null);
+
+    public Task RemoveByCreatorAsync(Guid creatorId, CancellationToken cancellationToken)
+    {
+        foreach (var id in _seeks.Values.Where(s => s.Creator.Id == creatorId).Select(s => s.Id).ToList())
+        {
+            _seeks.Remove(id);
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakePresence : IPresence
+{
+    public HashSet<Guid> Online { get; } = [];
+
+    public bool IsOnline(Guid userId) => Online.Contains(userId);
 }
 
 /// <summary>"Hasht" door een voorvoegsel toe te voegen, zodat tests kunnen zien dat er gehasht is.</summary>

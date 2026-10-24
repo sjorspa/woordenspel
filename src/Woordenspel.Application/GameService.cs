@@ -14,33 +14,28 @@ namespace Woordenspel.Application;
 /// </summary>
 public sealed class GameService(
     IGameRepository repository,
-    IUserRepository users,
     IWordDictionary dictionary,
     IRandomizer randomizer,
     IGameNotifier notifier,
     TimeProvider timeProvider,
     GameSetup setup)
 {
-    /// <summary>Start een spel tussen de ingelogde gebruiker en een tegenstander.</summary>
-    public async Task<GameDto> CreateGameAsync(Guid creatorId, string opponentUsername, CancellationToken cancellationToken = default)
+    /// <summary>Start een spel tussen deze spelers en laat ze dat weten, zodat ze het openen.</summary>
+    /// <returns>Het spel zoals <paramref name="viewerId"/> het ziet.</returns>
+    public async Task<GameDto> StartGameAsync(
+        IReadOnlyList<PlayerIdentity> players, Guid viewerId, CancellationToken cancellationToken = default)
     {
-        var opponent = await users.FindByUsernameAsync(opponentUsername ?? string.Empty, cancellationToken)
-            ?? throw new UserNotFoundException(opponentUsername ?? string.Empty);
-        var creator = await users.FindByIdAsync(creatorId, cancellationToken)
-            ?? throw new InvalidOperationException($"Ingelogde gebruiker {creatorId} bestaat niet.");
-
         var bag = new TileBag(setup.LetterSet.CreateTiles(), randomizer);
-        var game = Game.Start(
-            Guid.NewGuid(),
-            [new PlayerIdentity(creator.Id, creator.Username), new PlayerIdentity(opponent.Id, opponent.Username)],
-            setup.Rules,
-            setup.Layout,
-            bag,
-            randomizer,
-            timeProvider.GetUtcNow());
+        var game = Game.Start(Guid.NewGuid(), players, setup.Rules, setup.Layout, bag, randomizer, timeProvider.GetUtcNow());
+        await repository.SaveAsync(game, cancellationToken);
 
-        await SaveAndNotifyAsync(game, cancellationToken);
-        return GameMapper.ToDto(game, creatorId, timeProvider.GetUtcNow());
+        var now = timeProvider.GetUtcNow();
+        foreach (var player in game.Players)
+        {
+            await notifier.GameStartedAsync(player.Id, GameMapper.ToDto(game, player.Id, now), cancellationToken);
+        }
+
+        return GameMapper.ToDto(game, viewerId, now);
     }
 
     /// <summary>De spelstand zoals deze speler hem ziet, inclusief het eigen plankje.</summary>

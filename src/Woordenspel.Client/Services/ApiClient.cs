@@ -54,8 +54,15 @@ public sealed class ApiClient(HttpClient http, AuthState auth)
     public Task<IReadOnlyList<GameSummaryDto>> ListGamesAsync() =>
         SendAsync<IReadOnlyList<GameSummaryDto>>(HttpMethod.Get, "api/games");
 
-    public Task<GameDto> CreateGameAsync(string opponent) =>
-        SendAsync<GameDto>(HttpMethod.Post, "api/games", new CreateGameRequest(opponent));
+    /// <param name="opponent">Wie je uitdaagt; null voor een open spel.</param>
+    public Task<SeekDto> CreateSeekAsync(string? opponent) =>
+        SendAsync<SeekDto>(HttpMethod.Post, "api/seeks", new CreateSeekRequest(opponent));
+
+    public Task<IReadOnlyList<SeekDto>> ListSeeksAsync() => SendAsync<IReadOnlyList<SeekDto>>(HttpMethod.Get, "api/seeks");
+
+    public Task<GameDto> JoinSeekAsync(Guid seekId) => SendAsync<GameDto>(HttpMethod.Post, $"api/seeks/{seekId}/join");
+
+    public Task CancelSeekAsync(Guid seekId) => SendAsync(HttpMethod.Delete, $"api/seeks/{seekId}");
 
     public Task<GameDto> GetGameAsync(Guid gameId) => SendAsync<GameDto>(HttpMethod.Get, $"api/games/{gameId}");
 
@@ -75,6 +82,13 @@ public sealed class ApiClient(HttpClient http, AuthState auth)
     private async Task<T> SendAsync<T>(
         HttpMethod method, string url, object? body = null, bool authorize = true, CancellationToken cancellationToken = default)
     {
+        using var response = await SendAsync(method, url, body, authorize, cancellationToken);
+        return (await response.Content.ReadFromJsonAsync<T>(ContractJson.Options, cancellationToken))!;
+    }
+
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpMethod method, string url, object? body = null, bool authorize = true, CancellationToken cancellationToken = default)
+    {
         using var request = new HttpRequestMessage(method, url);
         if (body is not null)
         {
@@ -86,17 +100,20 @@ public sealed class ApiClient(HttpClient http, AuthState auth)
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);
         }
 
-        using var response = await http.SendAsync(request, cancellationToken);
+        var response = await http.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            if (authorize && response.StatusCode == HttpStatusCode.Unauthorized)
+            using (response)
             {
-                await auth.SignOutAsync();
-            }
+                if (authorize && response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    await auth.SignOutAsync();
+                }
 
-            throw await ApiException.FromResponseAsync(response);
+                throw await ApiException.FromResponseAsync(response);
+            }
         }
 
-        return (await response.Content.ReadFromJsonAsync<T>(ContractJson.Options, cancellationToken))!;
+        return response;
     }
 }

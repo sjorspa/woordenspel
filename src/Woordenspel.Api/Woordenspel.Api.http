@@ -26,12 +26,28 @@ Content-Type: application/json
 GET {{baseUrl}}/api/account/me
 Authorization: Bearer {{token}}
 
-### Nieuw spel
-POST {{baseUrl}}/api/games
+### Open spel starten (iedereen die online is kan meedoen)
+POST {{baseUrl}}/api/seeks
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ }
+
+### Iemand uitdagen
+POST {{baseUrl}}/api/seeks
 Authorization: Bearer {{token}}
 Content-Type: application/json
 
 { "opponent": "bram" }
+
+### Uitnodigingen die ik kan zien
+GET {{baseUrl}}/api/seeks
+Authorization: Bearer {{token}}
+
+### Meedoen (met het token van de tegenstander; het spel start)
+@seekId = 00000000-0000-0000-0000-000000000000
+POST {{baseUrl}}/api/seeks/{{seekId}}/join
+Authorization: Bearer {{token}}
 
 ### Mijn spellen
 GET {{baseUrl}}/api/games

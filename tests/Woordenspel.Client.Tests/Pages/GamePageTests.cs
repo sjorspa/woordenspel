@@ -47,7 +47,7 @@ public class GamePageTests : PageTestContext
         page.WaitForAssertion(() => Assert.Equal(3, page.FindAll(".square .tile:not(.pending)").Count));
         var body = Assert.Single(Server.BodiesFor($"POST {GameUrl}/place"));
         Assert.Contains("\"row\":7,\"column\":7,\"letter\":\"K\"", body);
-        Assert.Contains("bram is aan de beurt.", page.Find(".status-line").TextContent);
+        Assert.Equal("bram is aan de beurt", page.Find(".turn-banner").TextContent.Trim());
         Assert.Equal("EENZAAM", new string(page.FindAll(".rack-slot .letter").Select(l => l.TextContent[0]).ToArray()));
     }
 
@@ -90,15 +90,37 @@ public class GamePageTests : PageTestContext
     }
 
     [Fact]
-    public async Task Moves_are_disabled_when_it_is_not_my_turn()
+    public async Task Turn_banner_shows_whose_turn_it_is()
+    {
+        var page = await RenderPageAsync();
+
+        Assert.Equal("Jouw beurt", page.Find(".turn-banner.mine").TextContent.Trim());
+    }
+
+    [Fact]
+    public async Task When_it_is_not_my_turn_the_page_says_so_and_moves_are_disabled()
     {
         Server.On($"GET {GameUrl}", GameState(currentPlayer: Bram));
+        Server.On($"POST {GameUrl}/preview", new PreviewDto(3, false, [new("KA", 3)]));
         var page = await RenderPageAsync();
 
         PlaceFromRack(page, slot: 0, row: 7, column: 7);
 
-        Assert.True(Button(page, "Spelen").HasAttribute("disabled"));
+        Assert.Equal("bram is aan de beurt", page.Find(".turn-banner").TextContent.Trim());
+        Assert.DoesNotContain("mine", page.Find(".turn-banner").ClassList);
+        Assert.True(Button(page, "Wacht op je beurt").HasAttribute("disabled"));
         Assert.True(Button(page, "Passen").HasAttribute("disabled"));
+    }
+
+    [Fact]
+    public async Task Play_button_is_enabled_once_tiles_are_placed_on_my_turn()
+    {
+        var page = await RenderPageAsync();
+        Assert.True(Button(page, "Spelen").HasAttribute("disabled"));
+
+        PlaceFromRack(page, slot: 0, row: 7, column: 7);
+
+        Assert.False(Button(page, "Spelen").HasAttribute("disabled"));
     }
 
     [Fact]

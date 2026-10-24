@@ -21,6 +21,7 @@ public static class DomainErrors
     public const string InvalidPlayerCount = "InvalidPlayerCount";
     public const string InvalidPlayerName = "InvalidPlayerName";
     public const string DuplicatePlayer = "DuplicatePlayer";
+    public const string SeekNotForYou = "SeekNotForYou";
     public const string InvalidUsername = "InvalidUsername";
     public const string InvalidPassword = "InvalidPassword";
     public const string PlayerNotInGame = "PlayerNotInGame";

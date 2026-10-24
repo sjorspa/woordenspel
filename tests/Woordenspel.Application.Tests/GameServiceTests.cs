@@ -29,9 +29,9 @@ public class GameServiceTests
     }
 
     [Fact]
-    public async Task CreateGame_starts_a_game_between_creator_and_opponent()
+    public async Task StartGame_starts_a_game_between_the_players()
     {
-        var game = await _service.CreateGameAsync(_anna.Id, "bram");
+        var game = await StartAsync();
 
         Assert.Equal(GameStatus.InProgress, game.Status);
         Assert.Equal([(_anna.Id, "Anna"), (_bram.Id, "Bram")], game.Players.Select(p => (p.Id, p.Name)));
@@ -44,23 +44,9 @@ public class GameServiceTests
     }
 
     [Fact]
-    public async Task CreateGame_requires_an_existing_opponent()
-    {
-        await Assert.ThrowsAsync<UserNotFoundException>(() => _service.CreateGameAsync(_anna.Id, "Charlie"));
-    }
-
-    [Fact]
-    public async Task CreateGame_against_yourself_is_rejected()
-    {
-        var exception = await Assert.ThrowsAsync<DomainException>(() => _service.CreateGameAsync(_anna.Id, "Anna"));
-
-        Assert.Equal(DomainErrors.DuplicatePlayer, exception.Code);
-    }
-
-    [Fact]
     public async Task GetGame_shows_only_the_viewers_rack()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
 
         var forAnna = await _service.GetGameAsync(created.Id, _anna.Id);
         var forBram = await _service.GetGameAsync(created.Id, _bram.Id);
@@ -78,7 +64,7 @@ public class GameServiceTests
     [Fact]
     public async Task GetGame_is_not_allowed_for_outsiders()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
 
         var exception = await Assert.ThrowsAsync<DomainException>(() => _service.GetGameAsync(created.Id, Guid.NewGuid()));
         Assert.Equal(DomainErrors.PlayerNotInGame, exception.Code);
@@ -88,9 +74,9 @@ public class GameServiceTests
     public async Task ListGames_returns_the_players_games_with_own_turn_first()
     {
         var charlie = _users.Add("Charlie");
-        var annasTurn = await _service.CreateGameAsync(_anna.Id, "Bram");
-        var charliesTurn = await _service.CreateGameAsync(charlie.Id, "Anna");
-        await _service.CreateGameAsync(_bram.Id, "Charlie");
+        var annasTurn = await StartAsync();
+        var charliesTurn = await StartAsync(players: [charlie, _anna]);
+        await StartAsync(players: [_bram, charlie]);
 
         var games = await _service.ListGamesAsync(_anna.Id);
 
@@ -101,7 +87,7 @@ public class GameServiceTests
     [Fact]
     public async Task PlaceTiles_plays_the_move_and_saves_the_game()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _repository.SaveCount = 0;
 
         var result = await _service.PlaceTilesAsync(created.Id, _anna.Id, [new(7, 7, 'a'), new(7, 8, 'A')]);
@@ -121,7 +107,7 @@ public class GameServiceTests
         var service = CreateService(
             GameSetup.Wordfeud with { LetterSet = new([new('A', 1, 1), new('K', 1, 3)], blankCount: 12) },
             new FakeWordDictionary("KAT"));
-        var created = await service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync(service);
 
         var result = await service.PlaceTilesAsync(created.Id, _anna.Id, [new(7, 7, 'K'), new(7, 8, 'A'), new(7, 9, 'T', IsBlank: true)]);
 
@@ -132,7 +118,7 @@ public class GameServiceTests
     [Fact]
     public async Task Invalid_move_is_not_saved()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _repository.SaveCount = 0;
 
         await Assert.ThrowsAsync<DomainException>(
@@ -144,7 +130,7 @@ public class GameServiceTests
     [Fact]
     public async Task PreviewPlacement_does_not_change_the_game()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
 
         var preview = await _service.PreviewPlacementAsync(created.Id, _anna.Id, [new(7, 7, 'A'), new(7, 8, 'A')]);
 
@@ -156,7 +142,7 @@ public class GameServiceTests
     [Fact]
     public async Task Swap_pass_and_resign_are_recorded_as_moves()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
 
         await _service.SwapTilesAsync(created.Id, _anna.Id, ['A', 'A']);
         await _service.PassAsync(created.Id, _bram.Id);
@@ -171,7 +157,7 @@ public class GameServiceTests
     [Fact]
     public async Task Game_shows_the_clocks_at_server_time()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _clock.Advance(TimeSpan.FromSeconds(20));
 
         var game = await _service.GetGameAsync(created.Id, _bram.Id);
@@ -184,7 +170,7 @@ public class GameServiceTests
     [Fact]
     public async Task Moving_stops_your_clock()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _clock.Advance(TimeSpan.FromSeconds(30));
 
         var result = await _service.PassAsync(created.Id, _anna.Id);
@@ -196,7 +182,7 @@ public class GameServiceTests
     [Fact]
     public async Task Both_players_are_notified_with_their_own_view()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _notifier.Sent.Clear();
 
         await _service.PlaceTilesAsync(created.Id, _anna.Id, [new(7, 7, 'A'), new(7, 8, 'A')]);
@@ -207,17 +193,19 @@ public class GameServiceTests
     }
 
     [Fact]
-    public async Task Creating_a_game_notifies_the_opponent()
+    public async Task Starting_a_game_tells_both_players_to_open_it_with_their_own_rack()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
 
-        Assert.Contains(_notifier.Sent, s => s.PlayerId == _bram.Id && s.Game.Id == created.Id);
+        Assert.Equal([_anna.Id, _bram.Id], _notifier.Started.Select(s => s.PlayerId));
+        Assert.All(_notifier.Started, s => Assert.Equal(created.Id, s.Game.Id));
+        Assert.Equal("BBCCDDD", Letters(_notifier.Started[1].Game.Rack));
     }
 
     [Fact]
     public async Task Rejected_move_sends_no_notification()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _notifier.Sent.Clear();
 
         await Assert.ThrowsAsync<DomainException>(() => _service.PassAsync(created.Id, _bram.Id));
@@ -228,9 +216,9 @@ public class GameServiceTests
     [Fact]
     public async Task ExpireOverdueGames_ends_games_whose_clock_ran_out_and_notifies_players()
     {
-        var overdue = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var overdue = await StartAsync();
         _clock.Advance(TimeSpan.FromMinutes(4));
-        var stillRunning = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var stillRunning = await StartAsync();
         _clock.Advance(TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1));
         _notifier.Sent.Clear();
 
@@ -246,7 +234,7 @@ public class GameServiceTests
     [Fact]
     public async Task Move_positions_are_included_in_the_history()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
 
         var result = await _service.PlaceTilesAsync(created.Id, _anna.Id, [new(7, 7, 'A'), new(7, 8, 'A')]);
 
@@ -256,7 +244,7 @@ public class GameServiceTests
     [Fact]
     public async Task Overdue_turn_is_processed_and_saved_when_the_game_is_loaded()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _clock.Advance(TimeSpan.FromHours(73));
         _repository.SaveCount = 0;
 
@@ -271,7 +259,7 @@ public class GameServiceTests
     [Fact]
     public async Task Overdue_turns_are_processed_when_listing_games()
     {
-        await _service.CreateGameAsync(_anna.Id, "Bram");
+        await StartAsync();
         _clock.Advance(TimeSpan.FromHours(73));
 
         var games = await _service.ListGamesAsync(_bram.Id);
@@ -282,7 +270,7 @@ public class GameServiceTests
     [Fact]
     public async Task Moving_after_the_deadline_is_rejected()
     {
-        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        var created = await StartAsync();
         _clock.Advance(TimeSpan.FromDays(4));
 
         var exception = await Assert.ThrowsAsync<DomainException>(() => _service.PassAsync(created.Id, _anna.Id));
@@ -313,7 +301,15 @@ public class GameServiceTests
     }
 
     private GameService CreateService(GameSetup setup, FakeWordDictionary dictionary) =>
-        new(_repository, _users, dictionary, new PredictableRandomizer(), _notifier, _clock, setup);
+        new(_repository, dictionary, new PredictableRandomizer(), _notifier, _clock, setup);
+
+    /// <summary>Start een spel; zonder <paramref name="players"/> tussen Anna (die begint) en Bram.</summary>
+    private Task<GameDto> StartAsync(GameService? service = null, User[]? players = null)
+    {
+        players ??= [_anna, _bram];
+        return (service ?? _service).StartGameAsync(
+            players.Select(u => new PlayerIdentity(u.Id, u.Username)).ToList(), players[0].Id);
+    }
 
     private static string Letters(IEnumerable<RackTileDto> rack) => new(rack.Select(t => t.Letter).ToArray());
 }

@@ -11,6 +11,12 @@ namespace Woordenspel.Client.Tests.Pages;
 
 public class LobbyTests : PageTestContext
 {
+    public LobbyTests()
+    {
+        Server.On("GET /api/games", new List<GameSummaryDto>());
+        Server.On("GET /api/seeks", new List<SeekDto>());
+    }
+
     [Fact]
     public async Task Lists_running_and_finished_games_with_whose_turn_it_is()
     {
@@ -31,24 +37,9 @@ public class LobbyTests : PageTestContext
         Assert.Contains("bram heeft gewonnen.", lobby.FindAll(".game-list li")[1].TextContent);
     }
 
-    [Theory]
-    [InlineData(true, "Geef die aan je tegenstander")]
-    [InlineData(false, "Daarmee kunnen anderen jou uitdagen")]
-    public async Task Shows_your_own_name_so_you_can_share_it(bool isGuest, string hint)
-    {
-        Server.On("GET /api/games", new List<GameSummaryDto>());
-        await Services.GetRequiredService<AuthState>().SignInAsync(AnnaLogin with { Username = "SnelleVos42", IsGuest = isGuest });
-
-        var lobby = Render<Lobby>();
-
-        Assert.Equal("SnelleVos42", lobby.Find(".own-name").TextContent);
-        Assert.Contains(hint, lobby.Find(".card").TextContent);
-    }
-
     [Fact]
-    public async Task Live_update_reloads_the_list()
+    public async Task Live_game_update_reloads_the_games()
     {
-        Server.On("GET /api/games", new List<GameSummaryDto>());
         await SignInAsync();
         var lobby = Render<Lobby>();
         lobby.WaitForElement(".card");
@@ -60,33 +51,137 @@ public class LobbyTests : PageTestContext
     }
 
     [Fact]
-    public async Task Creating_a_game_opens_it()
+    public async Task Shows_waiting_games_with_the_right_action()
     {
-        Server.On("GET /api/games", new List<GameSummaryDto>());
-        Server.On("POST /api/games", GameState(), HttpStatusCode.Created);
+        Server.On("GET /api/seeks", new List<SeekDto>
+        {
+            Seek(Bram, "bram", opponent: Anna, opponentName: "anna"),
+            Seek(Bram, "charlie"),
+            Seek(Anna, "anna", isMine: true),
+        });
+        await SignInAsync();
+
+        var lobby = Render<Lobby>();
+
+        lobby.WaitForAssertion(() => Assert.Equal(3, lobby.FindAll(".seek-list li").Count));
+        var items = lobby.FindAll(".seek-list li");
+        Assert.Contains("bram daagt je uit!", items[0].TextContent);
+        Assert.Equal("Accepteren", items[0].QuerySelector("button")!.TextContent);
+        Assert.Contains("charlie zoekt een tegenstander", items[1].TextContent);
+        Assert.Equal("Meedoen", items[1].QuerySelector("button")!.TextContent);
+        Assert.Contains("Jouw open spel", items[2].TextContent);
+        Assert.Equal("Annuleren", items[2].QuerySelector("button")!.TextContent);
+    }
+
+    [Fact]
+    public async Task Nobody_waiting_shows_a_hint()
+    {
+        await SignInAsync();
+
+        var lobby = Render<Lobby>();
+
+        lobby.WaitForAssertion(() => Assert.Contains("Er wacht nu niemand", lobby.Markup));
+    }
+
+    [Fact]
+    public async Task Starting_an_open_game_creates_a_seek_without_opponent()
+    {
+        Server.On("POST /api/seeks", Seek(Anna, "anna", isMine: true), HttpStatusCode.Created);
+        await SignInAsync();
+        var lobby = Render<Lobby>();
+
+        Server.On("GET /api/seeks", new List<SeekDto> { Seek(Anna, "anna", isMine: true) });
+        lobby.FindAll("button").Single(b => b.TextContent == "Open spel starten").Click();
+
+        lobby.WaitForAssertion(() => Assert.Contains("Jouw open spel", lobby.Find(".seek-list").TextContent));
+        Assert.Contains("\"opponent\":null", Server.BodiesFor("POST /api/seeks").Single());
+    }
+
+    [Fact]
+    public async Task Challenging_sends_the_opponents_name()
+    {
+        Server.On("POST /api/seeks", Seek(Anna, "anna", opponent: Bram, opponentName: "bram", isMine: true), HttpStatusCode.Created);
         await SignInAsync();
         var lobby = Render<Lobby>();
 
         lobby.Find("input").Change("bram");
         lobby.Find("form").Submit();
 
-        lobby.WaitForAssertion(() => Assert.Equal($"/games/{GameId}", CurrentPath));
-        Assert.Contains("\"opponent\":\"bram\"", Server.BodiesFor("POST /api/games").Single());
+        lobby.WaitForAssertion(() => Assert.Contains("\"opponent\":\"bram\"", Server.BodiesFor("POST /api/seeks").Single()));
     }
 
     [Fact]
-    public async Task Unknown_opponent_shows_the_error()
+    public async Task Joining_opens_the_game()
     {
-        Server.On("GET /api/games", new List<GameSummaryDto>());
-        Server.OnProblem("POST /api/games", HttpStatusCode.NotFound, "UserNotFound", "Gebruiker 'xyz' bestaat niet.");
+        var seek = Seek(Bram, "bram");
+        Server.On("GET /api/seeks", new List<SeekDto> { seek });
+        Server.On($"POST /api/seeks/{seek.Id}/join", GameState(), HttpStatusCode.Created);
         await SignInAsync();
         var lobby = Render<Lobby>();
 
-        lobby.Find("input").Change("xyz");
-        lobby.Find("form").Submit();
+        lobby.WaitForElement(".seek-list button").Click();
 
-        lobby.WaitForAssertion(() => Assert.Equal("Gebruiker 'xyz' bestaat niet.", lobby.Find(".error").TextContent));
+        lobby.WaitForAssertion(() => Assert.Equal($"/games/{GameId}", CurrentPath));
     }
+
+    [Fact]
+    public async Task Cancelling_removes_your_seek()
+    {
+        var seek = Seek(Anna, "anna", isMine: true);
+        Server.On("GET /api/seeks", new List<SeekDto> { seek });
+        Server.OnEmpty($"DELETE /api/seeks/{seek.Id}");
+        await SignInAsync();
+        var lobby = Render<Lobby>();
+
+        lobby.WaitForElement(".seek-list button");
+        Server.On("GET /api/seeks", new List<SeekDto>());
+        lobby.Find(".seek-list button").Click();
+
+        lobby.WaitForAssertion(() => Assert.Empty(lobby.FindAll(".seek-list li")));
+    }
+
+    [Fact]
+    public async Task Seek_changes_from_others_reload_the_list()
+    {
+        await SignInAsync();
+        var lobby = Render<Lobby>();
+        lobby.WaitForAssertion(() => Assert.Contains("Er wacht nu niemand", lobby.Markup));
+
+        Server.On("GET /api/seeks", new List<SeekDto> { Seek(Bram, "bram") });
+        await lobby.InvokeAsync(() => Updates.SeeksChangedAsync());
+
+        lobby.WaitForAssertion(() => Assert.Contains("bram zoekt een tegenstander", lobby.Find(".seek-list").TextContent));
+    }
+
+    [Fact]
+    public async Task Joining_a_seek_that_is_gone_shows_the_error()
+    {
+        var seek = Seek(Bram, "bram");
+        Server.On("GET /api/seeks", new List<SeekDto> { seek });
+        Server.OnProblem($"POST /api/seeks/{seek.Id}/join", HttpStatusCode.NotFound, "SeekNotFound", "Dit spel is niet meer beschikbaar.");
+        await SignInAsync();
+        var lobby = Render<Lobby>();
+
+        lobby.WaitForElement(".seek-list button").Click();
+
+        lobby.WaitForAssertion(() => Assert.Equal("Dit spel is niet meer beschikbaar.", lobby.Find(".error").TextContent));
+    }
+
+    [Theory]
+    [InlineData(true, "Geef die aan je tegenstander")]
+    [InlineData(false, "Daarmee kunnen anderen jou uitdagen")]
+    public async Task Shows_your_own_name_so_you_can_share_it(bool isGuest, string hint)
+    {
+        await Services.GetRequiredService<AuthState>().SignInAsync(AnnaLogin with { Username = "SnelleVos42", IsGuest = isGuest });
+
+        var lobby = Render<Lobby>();
+
+        Assert.Equal("SnelleVos42", lobby.Find(".own-name").TextContent);
+        Assert.Contains(hint, lobby.Find(".card").TextContent);
+    }
+
+    private static SeekDto Seek(Guid creator, string creatorName, Guid? opponent = null, string? opponentName = null, bool isMine = false) =>
+        new(Guid.NewGuid(), creator, creatorName, opponent, opponentName, isMine, 300_000, FakeTimeProvider.Start);
 
     private static GameSummaryDto Summary(GameStatus status, Guid? currentPlayer, IReadOnlyList<Guid>? winners = null) =>
         new(Guid.NewGuid(), status, FakeTimeProvider.Start, currentPlayer, currentPlayer == Anna, null,

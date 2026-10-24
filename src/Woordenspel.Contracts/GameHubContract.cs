@@ -10,4 +10,13 @@ public static class GameHubContract
     /// van een spel waarin de ontvanger meedoet: een nieuw spel, een zet, of een speler die door zijn tijd heen is.
     /// </summary>
     public const string GameUpdated = "GameUpdated";
+
+    /// <summary>
+    /// Server → client, met een <see cref="GameDto"/>: een spel waarin de ontvanger meedoet is net begonnen
+    /// (iemand accepteerde een uitnodiging). De client opent het spel.
+    /// </summary>
+    public const string GameStarted = "GameStarted";
+
+    /// <summary>Server → alle clients, zonder inhoud: de uitnodigingen zijn veranderd.</summary>
+    public const string SeeksChanged = "SeeksChanged";
 }

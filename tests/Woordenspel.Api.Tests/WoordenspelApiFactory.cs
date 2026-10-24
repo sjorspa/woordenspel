@@ -33,10 +33,15 @@ public sealed class WoordenspelApiFactory : WebApplicationFactory<Program>
         Converters = { new JsonStringEnumConverter() },
     };
 
+    private readonly List<HubListener> _listeners = [];
+
     public FakeTimeProvider Clock { get; } = new();
 
-    /// <summary>Registreert een nieuwe gebruiker met een unieke naam en geeft een client die als die gebruiker is ingelogd.</summary>
-    public async Task<(HttpClient Client, AuthResponse User)> CreateUserClientAsync()
+    /// <summary>
+    /// Registreert een nieuwe gebruiker met een unieke naam en geeft een client die als die gebruiker is ingelogd.
+    /// De gebruiker is ook online (verbonden met de hub), net als in de echte frontend.
+    /// </summary>
+    public async Task<(HttpClient Client, AuthResponse User)> CreateUserClientAsync(bool online = true)
     {
         var client = CreateClient();
         var username = $"u{Guid.NewGuid():N}"[..13];
@@ -45,13 +50,37 @@ public sealed class WoordenspelApiFactory : WebApplicationFactory<Program>
 
         var user = (await response.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions))!;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);
+        if (online)
+        {
+            _listeners.Add(await ConnectAsync(user));
+        }
+
         return (client, user);
     }
 
-    /// <summary>Opent een realtime-verbinding als deze gebruiker; ontvangen spelupdates komen in de lijst.</summary>
-    public async Task<(HubConnection Connection, List<GameDto> Updates)> ConnectAsync(AuthResponse user)
+    /// <summary>Anna daagt Bram uit en Bram accepteert. Anna begint (de letterzak schudt niet).</summary>
+    /// <returns>Het spel zoals Anna het ziet.</returns>
+    public async Task<(HttpClient Anna, AuthResponse AnnaUser, HttpClient Bram, AuthResponse BramUser, GameDto Game)> StartGameAsync()
     {
-        var updates = new List<GameDto>();
+        var (anna, annaUser) = await CreateUserClientAsync();
+        var (bram, bramUser) = await CreateUserClientAsync();
+
+        var seek = await ReadAsync<SeekDto>(await anna.PostAsJsonAsync("/api/seeks", new { opponent = bramUser.Username }));
+        (await bram.PostAsync($"/api/seeks/{seek.Id}/join", null)).EnsureSuccessStatusCode();
+        var game = (await anna.GetFromJsonAsync<List<GameSummaryDto>>("/api/games", JsonOptions))!.Single();
+        return (anna, annaUser, bram, bramUser, (await anna.GetFromJsonAsync<GameDto>($"/api/games/{game.Id}", JsonOptions))!);
+    }
+
+    private static async Task<T> ReadAsync<T>(HttpResponseMessage response)
+    {
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<T>(JsonOptions))!;
+    }
+
+    /// <summary>Opent een realtime-verbinding als deze gebruiker en houdt bij wat er binnenkomt.</summary>
+    public async Task<HubListener> ConnectAsync(AuthResponse user)
+    {
+        var listener = new HubListener();
         var connection = new HubConnectionBuilder()
             .WithUrl(new Uri(Server.BaseAddress, GameHubContract.Path), options =>
             {
@@ -61,16 +90,13 @@ public sealed class WoordenspelApiFactory : WebApplicationFactory<Program>
             })
             .AddJsonProtocol(options => options.PayloadSerializerOptions.Converters.Add(new JsonStringEnumConverter()))
             .Build();
-        connection.On<GameDto>(GameHubContract.GameUpdated, game =>
-        {
-            lock (updates)
-            {
-                updates.Add(game);
-            }
-        });
+        connection.On<GameDto>(GameHubContract.GameUpdated, game => listener.Record(listener.Updates, game));
+        connection.On<GameDto>(GameHubContract.GameStarted, game => listener.Record(listener.Started, game));
+        connection.On(GameHubContract.SeeksChanged, () => Interlocked.Increment(ref listener.SeeksChangedCount));
 
         await connection.StartAsync();
-        return (connection, updates);
+        listener.Connection = connection;
+        return listener;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -92,6 +118,11 @@ public sealed class WoordenspelApiFactory : WebApplicationFactory<Program>
 
     protected override void Dispose(bool disposing)
     {
+        foreach (var listener in _listeners)
+        {
+            listener.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        }
+
         base.Dispose(disposing);
         SqliteConnection.ClearAllPools();
         if (Directory.Exists(_dataDirectory))

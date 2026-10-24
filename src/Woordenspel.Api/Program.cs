@@ -39,6 +39,7 @@ if (app.Environment.IsDevelopment())
 app.MapStaticAssets();
 app.MapHealthChecks("/health");
 app.MapAccountEndpoints();
+app.MapSeekEndpoints();
 app.MapGameEndpoints();
 app.MapWordEndpoints();
 app.MapSetupEndpoints();

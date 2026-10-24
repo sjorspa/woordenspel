@@ -1,12 +1,12 @@
 @page "/"
-@implements IAsyncDisposable
+@implements IDisposable
 @inject ApiClient Api
 @inject AuthState Auth
 @inject IGameUpdates Updates
 @inject NavigationManager Navigation
 @inject TimeProvider Time
 
-<PageTitle>Mijn spellen – Woordenspel</PageTitle>
+<PageTitle>Woordenspel</PageTitle>
 
 <section class="card">
     <h1>Nieuw blitzspel</h1>
@@ -17,21 +17,57 @@
             @(me.IsGuest ? "Geef die aan je tegenstander, zodat die jou kan uitdagen." : "Daarmee kunnen anderen jou uitdagen.")
         </p>
     }
-    <form class="inline" @onsubmit="CreateGameAsync" @onsubmit:preventDefault="true">
-        <input @bind="_opponent" placeholder="Gebruikersnaam van je tegenstander" aria-label="Tegenstander" required />
-        <button type="submit" disabled="@_busy">Spelen</button>
+
+    <button class="wide" disabled="@_busy" @onclick="StartOpenGameAsync">Open spel starten</button>
+    <p class="muted small">Iedereen die online is kan meedoen. De klok begint pas als er een tegenstander is.</p>
+
+    <div class="divider"><span>of daag iemand uit</span></div>
+
+    <form class="inline" @onsubmit="ChallengeAsync" @onsubmit:preventDefault="true">
+        <input @bind="_opponent" placeholder="Gebruikersnaam" aria-label="Tegenstander" required />
+        <button type="submit" disabled="@_busy">Uitdagen</button>
     </form>
+
     @if (_error is not null)
     {
         <p class="error" role="alert">@_error</p>
     }
 </section>
 
-@if (_games is null)
-{
-    <p class="muted">Spellen laden…</p>
-}
-else
+<section class="card">
+    <h2>Wachten op een tegenstander</h2>
+    @if (_seeks is null)
+    {
+        <p class="muted">Laden…</p>
+    }
+    else if (_seeks.Count == 0)
+    {
+        <p class="muted">Er wacht nu niemand. Start zelf een open spel!</p>
+    }
+    else
+    {
+        <ul class="seek-list">
+            @foreach (var seek in _seeks)
+            {
+                var id = seek.Id;
+                <li class="@SeekClass(seek)">
+                    <span class="seek-text">@SeekText(seek)</span>
+                    @if (seek.IsMine)
+                    {
+                        <span class="waiting">wacht…</span>
+                        <button class="secondary" disabled="@_busy" @onclick="() => CancelAsync(id)">Annuleren</button>
+                    }
+                    else
+                    {
+                        <button disabled="@_busy" @onclick="() => JoinAsync(id)">@(seek.OpponentId is null ? "Meedoen" : "Accepteren")</button>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@if (_games is not null)
 {
     <GameList Title="Bezig" Games="Running" ViewerId="ViewerId" ReceivedAt="_receivedAt" Empty="Je hebt geen lopende spellen." />
     <GameList Title="Afgelopen" Games="Finished" ViewerId="ViewerId" ReceivedAt="_receivedAt" Empty="Nog geen afgelopen spellen." />
@@ -39,6 +75,7 @@ else
 
 @code {
     private IReadOnlyList<GameSummaryDto>? _games;
+    private IReadOnlyList<SeekDto>? _seeks;
     private DateTimeOffset _receivedAt;
     private string _opponent = string.Empty;
     private string? _error;
@@ -59,24 +96,39 @@ else
         }
 
         Updates.GameUpdated += OnGameUpdated;
-        Updates.Reconnected += LoadAsync;
-        await LoadAsync();
-        await ConnectAsync();
+        Updates.SeeksChanged += LoadSeeksAsync;
+        Updates.Reconnected += LoadAllAsync;
+        await LoadAllAsync();
     }
 
-    public ValueTask DisposeAsync()
+    public void Dispose()
     {
         Updates.GameUpdated -= OnGameUpdated;
-        Updates.Reconnected -= LoadAsync;
-        return ValueTask.CompletedTask;
+        Updates.SeeksChanged -= LoadSeeksAsync;
+        Updates.Reconnected -= LoadAllAsync;
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAllAsync()
+    {
+        await LoadSeeksAsync();
+        await LoadGamesAsync();
+    }
+
+    private Task OnGameUpdated(GameDto _) => LoadGamesAsync();
+
+    private Task LoadGamesAsync() => LoadAsync(async () =>
+    {
+        _games = await Api.ListGamesAsync();
+        _receivedAt = Time.GetUtcNow();
+    });
+
+    private Task LoadSeeksAsync() => LoadAsync(async () => _seeks = await Api.ListSeeksAsync());
+
+    private async Task LoadAsync(Func<Task> load)
     {
         try
         {
-            _games = await Api.ListGamesAsync();
-            _receivedAt = Time.GetUtcNow();
+            await load();
         }
         catch (ApiException exception)
         {
@@ -90,36 +142,58 @@ else
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task ConnectAsync()
+    private Task StartOpenGameAsync() => RunAsync(async () =>
     {
-        try
-        {
-            await Updates.EnsureConnectedAsync();
-        }
-        catch (Exception)
-        {
-            _error = "Geen live verbinding; ververs de pagina om de nieuwste stand te zien.";
-        }
-    }
+        await Api.CreateSeekAsync(opponent: null);
+        await LoadSeeksAsync();
+    });
 
-    private Task OnGameUpdated(GameDto _) => LoadAsync();
+    private Task ChallengeAsync() => RunAsync(async () =>
+    {
+        await Api.CreateSeekAsync(_opponent.Trim());
+        _opponent = string.Empty;
+        await LoadSeeksAsync();
+    });
 
-    private async Task CreateGameAsync()
+    private Task JoinAsync(Guid seekId) => RunAsync(async () =>
+    {
+        var game = await Api.JoinSeekAsync(seekId);
+        Navigation.NavigateTo($"games/{game.Id}");
+    });
+
+    private Task CancelAsync(Guid seekId) => RunAsync(async () =>
+    {
+        await Api.CancelSeekAsync(seekId);
+        await LoadSeeksAsync();
+    });
+
+    private async Task RunAsync(Func<Task> action)
     {
         _busy = true;
         _error = null;
         try
         {
-            var game = await Api.CreateGameAsync(_opponent.Trim());
-            Navigation.NavigateTo($"games/{game.Id}");
+            await action();
         }
         catch (ApiException exception)
         {
             _error = exception.Message;
+            await LoadSeeksAsync();
         }
         finally
         {
             _busy = false;
         }
     }
+
+    private static string SeekClass(SeekDto seek) =>
+        seek.IsMine ? "mine" : seek.OpponentId is not null ? "challenge" : string.Empty;
+
+    private static string SeekText(SeekDto seek) => (seek.IsMine, seek.OpponentName) switch
+    {
+        (true, null) => "Jouw open spel",
+        (true, { } opponent) => $"Je daagde {opponent} uit",
+        (false, null) => $"{seek.CreatorName} zoekt een tegenstander",
+        (false, _) => $"{seek.CreatorName} daagt je uit!",
+    };
 }

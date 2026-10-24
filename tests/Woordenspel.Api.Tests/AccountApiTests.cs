@@ -80,11 +80,11 @@ public class AccountApiTests(WoordenspelApiFactory factory) : IClassFixture<Woor
     }
 
     [Fact]
-    public async Task Guest_can_play_against_a_registered_player()
+    public async Task Guest_can_challenge_a_registered_player()
     {
         var guest = await ReadAsync<AuthResponse>(await _client.PostAsync("/api/account/guest", null));
         await _client.PostAsJsonAsync("/api/account/register", new { username = "Fleur", password = "geheim123" });
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/games") { Content = JsonContent.Create(new { opponent = "fleur" }) };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/seeks") { Content = JsonContent.Create(new { opponent = "fleur" }) };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", guest.Token);
 
         var response = await _client.SendAsync(request);

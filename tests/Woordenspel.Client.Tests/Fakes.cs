@@ -32,6 +32,12 @@ internal sealed class FakeApi : HttpMessageHandler
 
     public List<(HttpRequestMessage Request, string? Body)> Requests { get; } = [];
 
+    public FakeApi OnEmpty(string route, HttpStatusCode status = HttpStatusCode.NoContent)
+    {
+        _routes[route] = _ => new HttpResponseMessage(status);
+        return this;
+    }
+
     public FakeApi On(string route, object response, HttpStatusCode status = HttpStatusCode.OK)
     {
         _routes[route] = _ => Json(response, status);
@@ -69,6 +75,10 @@ internal sealed class FakeGameUpdates : IGameUpdates
 {
     public event Func<GameDto, Task>? GameUpdated;
 
+    public event Func<GameDto, Task>? GameStarted;
+
+    public event Func<Task>? SeeksChanged;
+
     public event Func<Task>? Reconnected;
 
     public int ConnectCount { get; private set; }
@@ -80,6 +90,10 @@ internal sealed class FakeGameUpdates : IGameUpdates
     }
 
     public Task PushAsync(GameDto game) => GameUpdated?.Invoke(game) ?? Task.CompletedTask;
+
+    public Task StartGameAsync(GameDto game) => GameStarted?.Invoke(game) ?? Task.CompletedTask;
+
+    public Task SeeksChangedAsync() => SeeksChanged?.Invoke() ?? Task.CompletedTask;
 
     public Task ReconnectAsync() => Reconnected?.Invoke() ?? Task.CompletedTask;
 }

@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject AuthState Auth
+@inject IGameUpdates Updates
 @inject NavigationManager Navigation
 
 <header class="topbar">
@@ -23,11 +24,48 @@
 </main>
 
 @code {
-    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.Changed += OnAuthChanged;
+        Updates.GameStarted += OnGameStarted;
+        await ConnectAsync();
+    }
 
-    public void Dispose() => Auth.Changed -= OnAuthChanged;
+    public void Dispose()
+    {
+        Auth.Changed -= OnAuthChanged;
+        Updates.GameStarted -= OnGameStarted;
+    }
 
-    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+    /// <summary>
+    /// Verbonden zijn betekent ook: online zijn. Alleen dan zien anderen je uitnodigingen.
+    /// </summary>
+    private async Task ConnectAsync()
+    {
+        if (!Auth.IsLoggedIn)
+        {
+            return;
+        }
+
+        try
+        {
+            await Updates.EnsureConnectedAsync();
+        }
+        catch (Exception)
+        {
+            // De pagina's melden zelf dat er geen live verbinding is.
+        }
+    }
+
+    /// <summary>Wie net inlogt, moet ook online komen; anders zien anderen zijn uitnodigingen niet.</summary>
+    private async void OnAuthChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+        await InvokeAsync(ConnectAsync);
+    }
+
+    /// <summary>Iemand deed mee met jouw uitnodiging (of jij met die van een ander): meteen naar het spel.</summary>
+    private Task OnGameStarted(GameDto game) => InvokeAsync(() => Navigation.NavigateTo($"games/{game.Id}"));
 
     private async Task SignOutAsync()
     {

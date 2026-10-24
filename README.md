@@ -22,7 +22,8 @@ dotnet test
 ```
 
 Registreer twee accounts, of kies "Speel als gast" (bijvoorbeeld in twee browservensters, één in een
-privévenster), en start een spel door de gebruikersnaam van je tegenstander in te vullen.
+privévenster). Start in het ene venster een open spel en klik in het andere op "Meedoen", of daag iemand uit op
+gebruikersnaam. Zodra iemand meedoet, gaan beide spelers automatisch naar het spel en begint de klok.
 
 In Development staat het OpenAPI-document op `/openapi/v1.json`.
 [`src/Woordenspel.Api/Woordenspel.Api.http`](src/Woordenspel.Api/Woordenspel.Api.http) bevat voorbeeldverzoeken.
@@ -109,13 +110,26 @@ Registreren en inloggen geven een token terug (7 dagen geldig). Stuur dat mee al
 Er wordt een willekeurige ondertekeningssleutel gemaakt en in de datamap bewaard. Wil je zelf een sleutel opgeven,
 gebruik dan `Jwt:SigningKey` (minstens 32 tekens), bijvoorbeeld via de omgevingsvariabele `Jwt__SigningKey`.
 
+### Uitnodigingen (inloggen vereist)
+
+Een spel begint als uitnodiging: open voor iedereen, of gericht aan één speler. Het spel en de klok starten pas
+als iemand meedoet; dan krijgen beide spelers `GameStarted` via de realtime-verbinding. Een uitnodiging is alleen
+zichtbaar zolang de maker online is (verbonden met de hub), en een nieuwe uitnodiging vervangt je vorige.
+Uitnodigingen staan in het geheugen; na een herstart van de server zijn ze weg.
+
+| Methode | Route | |
+|---|---|---|
+| `POST` | `/api/seeks` | Open spel: `{}`; iemand uitdagen: `{ "opponent": "bram" }` |
+| `GET` | `/api/seeks` | Uitnodigingen die ik kan zien: mijn eigen, open spellen en uitdagingen aan mij |
+| `POST` | `/api/seeks/{seekId}/join` | Meedoen of accepteren → het nieuwe spel |
+| `DELETE` | `/api/seeks/{seekId}` | Mijn uitnodiging intrekken |
+
 ### Spellen (inloggen vereist)
 
 Alle acties gelden voor de ingelogde gebruiker.
 
 | Methode | Route | |
 |---|---|---|
-| `POST` | `/api/games` | Nieuw spel tegen een andere gebruiker: `{ "opponent": "bram" }` |
 | `GET` | `/api/games` | Mijn spellen; lopende spellen waarin ik aan de beurt ben eerst |
 | `GET` | `/api/games/{gameId}` | Spelstand, inclusief mijn plankje |
 | `POST` | `/api/games/{gameId}/preview` | Score van een zet berekenen zonder hem te spelen |
@@ -128,8 +142,9 @@ Alle acties gelden voor de ingelogde gebruiker.
 
 De frontend luistert via [SignalR](https://learn.microsoft.com/aspnet/core/signalr/introduction) op
 `/hubs/games` (het token gaat mee als `access_token` in de query). Na elke wijziging van een spel waarin je meedoet,
-stuurt de server `GameUpdated` met de spelstand zoals jij hem ziet: een nieuw spel, een zet, of een klok die is
-afgelopen.
+stuurt de server `GameUpdated` met de spelstand zoals jij hem ziet: een zet, of een klok die is afgelopen. Daarnaast
+`GameStarted` als iemand met jouw uitnodiging meedoet (of jij met die van een ander), en `SeeksChanged` (zonder
+inhoud) als de lijst met uitnodigingen verandert.
 
 Elke spelstand bevat `serverTime` en per speler `timeRemainingMs`: de resterende tijd op dat moment. Een client telt
 vanaf ontvangst zelf af voor de speler die aan de beurt is; de klok van de eigen computer speelt dus geen rol.
@@ -149,8 +164,9 @@ Fouten komen terug als `application/problem+json` met een stabiele `code`:
 | Status | Wanneer | Voorbeelden van `code` |
 |---|---|---|
 | `401` | Geen of ongeldig token, of verkeerde inloggegevens | `AuthenticationFailed` |
-| `404` | Spel of gebruiker bestaat niet, of je doet niet mee aan dit spel | `GameNotFound`, `UserNotFound`, `PlayerNotInGame` |
-| `409` | Niet aan de beurt, spel voorbij, naam bezet, gelijktijdige wijziging | `NotYourTurn`, `GameFinished`, `UsernameTaken`, `ConcurrencyConflict` |
+| `403` | Een uitdaging accepteren die voor iemand anders is | `SeekNotForYou` |
+| `404` | Spel, uitnodiging of gebruiker bestaat niet, of je doet niet mee aan dit spel | `GameNotFound`, `SeekNotFound`, `UserNotFound`, `PlayerNotInGame` |
+| `409` | Niet aan de beurt, spel voorbij, naam bezet, maker niet meer online, gelijktijdige wijziging | `NotYourTurn`, `GameFinished`, `UsernameTaken`, `SeekUnavailable`, `ConcurrencyConflict` |
 | `422` | Andere regelovertredingen | `InvalidWords` (met lijst `invalidWords`), `MustCoverCenter`, `InvalidPassword` |
 
 ## Woordenlijst

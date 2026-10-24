@@ -10,21 +10,6 @@ namespace Woordenspel.Api.Tests;
 public class GameApiTests(WoordenspelApiFactory factory) : IClassFixture<WoordenspelApiFactory>
 {
     [Fact]
-    public async Task Create_game_against_an_opponent()
-    {
-        var (anna, annaUser) = await factory.CreateUserClientAsync();
-        var (_, bramUser) = await factory.CreateUserClientAsync();
-
-        var response = await anna.PostAsJsonAsync("/api/games", new { opponent = bramUser.Username });
-
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var game = await ReadAsync<GameDto>(response);
-        Assert.Equal($"/api/games/{game.Id}", response.Headers.Location?.ToString());
-        Assert.Equal([annaUser.UserId, bramUser.UserId], game.Players.Select(p => p.Id));
-        Assert.Equal("AAAAAAA", Letters(game));
-    }
-
-    [Fact]
     public async Task Both_players_see_the_game_with_their_own_rack()
     {
         var (anna, bram, game) = await StartGameAsync();
@@ -49,26 +34,6 @@ public class GameApiTests(WoordenspelApiFactory factory) : IClassFixture<Woorden
         var response = await outsider.GetAsync($"/api/games/{game.Id}");
 
         await ProblemAsync(response, HttpStatusCode.NotFound, "PlayerNotInGame");
-    }
-
-    [Fact]
-    public async Task Unknown_opponent_returns_not_found()
-    {
-        var (anna, _) = await factory.CreateUserClientAsync();
-
-        var response = await anna.PostAsJsonAsync("/api/games", new { opponent = "bestaatniet" });
-
-        await ProblemAsync(response, HttpStatusCode.NotFound, "UserNotFound");
-    }
-
-    [Fact]
-    public async Task Playing_against_yourself_is_rejected()
-    {
-        var (anna, annaUser) = await factory.CreateUserClientAsync();
-
-        var response = await anna.PostAsJsonAsync("/api/games", new { opponent = annaUser.Username });
-
-        await ProblemAsync(response, HttpStatusCode.UnprocessableEntity, "DuplicatePlayer");
     }
 
     [Fact]
@@ -178,14 +143,11 @@ public class GameApiTests(WoordenspelApiFactory factory) : IClassFixture<Woorden
         Assert.Equal(26, setup.Letters.Count);
     }
 
-    /// <summary>Anna maakt het spel aan en begint.</summary>
+    /// <summary>Anna daagt Bram uit, Bram accepteert, en Anna begint.</summary>
     private async Task<(HttpClient Anna, HttpClient Bram, GameDto Game)> StartGameAsync()
     {
-        var (anna, _) = await factory.CreateUserClientAsync();
-        var (bram, bramUser) = await factory.CreateUserClientAsync();
-        var response = await anna.PostAsJsonAsync("/api/games", new { opponent = bramUser.Username });
-        response.EnsureSuccessStatusCode();
-        return (anna, bram, await ReadAsync<GameDto>(response));
+        var (anna, _, bram, _, game) = await factory.StartGameAsync();
+        return (anna, bram, game);
     }
 
     private static async Task<GameDto> GetGameAsync(HttpClient client, Guid gameId) =>

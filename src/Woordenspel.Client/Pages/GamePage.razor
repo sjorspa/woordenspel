@@ -26,6 +26,13 @@ else
 
         <PlayerBar Player="me" Clock="_clock" IsToMove="IsMyTurn" Label="Jij" />
 
+        @if (_game.Status == GameStatus.InProgress)
+        {
+            <div class="turn-banner @(IsMyTurn ? "mine" : "")" role="status">
+                @(IsMyTurn ? "Jouw beurt" : $"{opponent.Name} is aan de beurt")
+            </div>
+        }
+
         <RackView Draft="_draft" SwapMode="_swapMode" OnSlotClick="OnSlotClick" OnSlotDragStart="id => _draggedSlotId = id" />
 
         <p class="status-line @(_previewIsError ? "error" : "")" aria-live="polite">@StatusLine</p>
@@ -42,7 +49,9 @@ else
                 }
                 else
                 {
-                    <button disabled="@(!IsMyTurn || _busy || !_draft.HasPending)" @onclick="PlayAsync">Spelen</button>
+                    <button class="play" disabled="@(!IsMyTurn || _busy || !_draft.HasPending)" @onclick="PlayAsync">
+                        @(IsMyTurn ? "Spelen" : "Wacht op je beurt")
+                    </button>
                     <button class="secondary" disabled="@(!_draft.HasPending)" @onclick="RecallAll">Terug</button>
                     <button class="secondary" @onclick="Shuffle">Schudden</button>
                     <button class="secondary" disabled="@(!IsMyTurn || _busy || !CanSwap)" @onclick="ToggleSwapMode">Ruilen</button>
@@ -116,7 +125,8 @@ else
         _error ?? _previewText ?? (_swapMode
             ? "Kies de stenen die je wilt ruilen."
             : _game?.Status != GameStatus.InProgress ? string.Empty
-            : IsMyTurn ? "Jouw beurt: leg een woord." : $"{Opponent?.Name} is aan de beurt.");
+            : IsMyTurn ? "Klik een steen en dan een vakje, of sleep hem naar het bord."
+            : "Je kunt alvast stenen neerleggen; spelen kan als je aan de beurt bent.");
 
     protected override async Task OnInitializedAsync()
     {
