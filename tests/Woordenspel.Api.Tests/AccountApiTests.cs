@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using Woordenspel.Api.Contracts;
+using Woordenspel.Contracts;
 using Woordenspel.Application;
 using static Woordenspel.Api.Tests.ApiAssert;
 
@@ -22,7 +22,7 @@ public class AccountApiTests(WoordenspelApiFactory factory) : IClassFixture<Woor
         Assert.True(auth.ExpiresAt > DateTimeOffset.UtcNow);
 
         var me = await GetMeAsync(auth.Token);
-        Assert.Equal(new UserDto(auth.UserId, "Anna"), me);
+        Assert.Equal(new UserDto(auth.UserId, "Anna", IsGuest: false), me);
     }
 
     [Fact]
@@ -65,6 +65,51 @@ public class AccountApiTests(WoordenspelApiFactory factory) : IClassFixture<Woor
         var response = await _client.PostAsJsonAsync("/api/account/register", new { username, password });
 
         await ProblemAsync(response, HttpStatusCode.UnprocessableEntity, code);
+    }
+
+    [Fact]
+    public async Task Playing_as_guest_gives_a_random_name_and_a_working_token()
+    {
+        var response = await _client.PostAsync("/api/account/guest", null);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var guest = await ReadAsync<AuthResponse>(response);
+        Assert.True(guest.IsGuest);
+        Assert.Matches("^[A-Z][a-z]+[A-Z][a-z]+[0-9]{2}$", guest.Username);
+        Assert.Equal(new UserDto(guest.UserId, guest.Username, IsGuest: true), await GetMeAsync(guest.Token));
+    }
+
+    [Fact]
+    public async Task Guest_can_play_against_a_registered_player()
+    {
+        var guest = await ReadAsync<AuthResponse>(await _client.PostAsync("/api/account/guest", null));
+        await _client.PostAsJsonAsync("/api/account/register", new { username = "Fleur", password = "geheim123" });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/games") { Content = JsonContent.Create(new { opponent = "fleur" }) };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", guest.Token);
+
+        var response = await _client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Guest_cannot_log_in_again()
+    {
+        var guest = await ReadAsync<AuthResponse>(await _client.PostAsync("/api/account/guest", null));
+
+        var response = await _client.PostAsJsonAsync("/api/account/login", new { username = guest.Username, password = "" });
+
+        await ProblemAsync(response, HttpStatusCode.Unauthorized, "AuthenticationFailed");
+    }
+
+    [Fact]
+    public async Task Registered_user_is_not_a_guest()
+    {
+        var auth = await ReadAsync<AuthResponse>(
+            await _client.PostAsJsonAsync("/api/account/register", new { username = "Gijs", password = "geheim123" }));
+
+        Assert.False(auth.IsGuest);
+        Assert.False((await GetMeAsync(auth.Token)).IsGuest);
     }
 
     [Theory]

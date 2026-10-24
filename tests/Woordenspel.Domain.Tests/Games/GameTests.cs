@@ -96,6 +96,7 @@ public class GameTests
 
         Assert.Equal(MoveType.Placement, move.Type);
         Assert.Equal(["KAT"], move.Words);
+        Assert.Equal([new Position(7, 7), new Position(7, 8), new Position(7, 9)], move.Positions);
         Assert.Equal(6, move.Score);
         Assert.Equal(6, anna.Score);
         Assert.Equal("BEDSAEI", RackOf(anna));
@@ -329,47 +330,113 @@ public class GameTests
         Assert.Empty(TestGames.Start(Rack1, Rack2, RestOfBag).Winners);
     }
 
-    // --- Bedenktijd ---
+    // --- Schaakklok ---
+
+    private static readonly TimeSpan FiveMinutes = TimeSpan.FromMinutes(5);
 
     [Fact]
-    public void Turn_deadline_is_the_time_limit_after_the_turn_started()
+    public void Every_player_starts_with_five_minutes()
     {
         var game = TestGames.Start(Rack1, Rack2, RestOfBag);
 
-        Assert.Equal(Now + TimeSpan.FromHours(72), game.TurnDeadline);
+        Assert.All(game.Players, p => Assert.Equal(FiveMinutes, p.TimeRemaining));
+        Assert.Equal(Now + FiveMinutes, game.TurnDeadline);
     }
 
     [Fact]
-    public void Each_new_turn_gets_a_fresh_deadline()
+    public void Only_the_clock_of_the_player_to_move_runs()
     {
         var game = TestGames.Start(Rack1, Rack2, RestOfBag);
-        var later = Now.AddHours(50);
+        var (anna, bram) = (game.Players[0], game.Players[1]);
+        var later = Now.AddSeconds(20);
 
-        game.Pass(game.Players[0].Id, later);
-
-        Assert.Equal(later, game.TurnStartedAt);
-        Assert.Equal(later.AddHours(72), game.TurnDeadline);
+        Assert.Equal(TimeSpan.FromSeconds(280), game.GetTimeRemaining(anna, later));
+        Assert.Equal(FiveMinutes, game.GetTimeRemaining(bram, later));
     }
 
     [Fact]
-    public void Turn_does_not_expire_until_the_deadline_has_passed()
+    public void Playing_a_move_stops_your_clock_and_starts_the_opponents()
     {
         var game = TestGames.Start(Rack1, Rack2, RestOfBag);
+        var (anna, bram) = (game.Players[0], game.Players[1]);
 
-        Assert.False(game.ExpireTurnIfOverdue(Now.AddHours(72)));
-        Assert.Equal(GameStatus.InProgress, game.Status);
+        game.PlaceTiles(anna.Id, TestGames.Word("KAT", 7, 7), Dictionary, Now.AddSeconds(30));
+
+        Assert.Equal(TimeSpan.FromSeconds(270), anna.TimeRemaining);
+        Assert.Equal(TimeSpan.FromSeconds(270), game.GetTimeRemaining(anna, Now.AddSeconds(100)));
+        Assert.Equal(TimeSpan.FromSeconds(230), game.GetTimeRemaining(bram, Now.AddSeconds(100)));
+        Assert.Equal(Now.AddSeconds(30) + FiveMinutes, game.TurnDeadline);
+    }
+
+    [Theory]
+    [InlineData("swap")]
+    [InlineData("pass")]
+    public void Swapping_and_passing_also_use_time(string action)
+    {
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag);
+        var anna = game.Players[0];
+        var later = Now.AddSeconds(45);
+
+        if (action == "swap")
+        {
+            game.SwapTiles(anna.Id, ['K'], later);
+        }
+        else
+        {
+            game.Pass(anna.Id, later);
+        }
+
+        Assert.Equal(TimeSpan.FromSeconds(255), anna.TimeRemaining);
     }
 
     [Fact]
-    public void Missing_the_deadline_loses_the_game()
+    public void Rejected_move_does_not_use_time()
     {
         var game = TestGames.Start(Rack1, Rack2, RestOfBag);
         var anna = game.Players[0];
 
-        Assert.True(game.ExpireTurnIfOverdue(Now.AddHours(72).AddSeconds(1)));
+        Assert.Throws<InvalidWordsException>(() => game.PlaceTiles(anna.Id, TestGames.Word("BAK", 7, 7), Dictionary, Now.AddSeconds(30)));
+
+        Assert.Equal(FiveMinutes, anna.TimeRemaining);
+        Assert.Equal(Now, game.TurnStartedAt);
+    }
+
+    [Fact]
+    public void Time_used_over_several_turns_adds_up()
+    {
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag);
+        var (anna, bram) = (game.Players[0], game.Players[1]);
+
+        game.Pass(anna.Id, Now.AddSeconds(10));   // anna 10 s
+        game.Pass(bram.Id, Now.AddSeconds(70));   // bram 60 s
+        game.Pass(anna.Id, Now.AddSeconds(100));  // anna 30 s
+
+        Assert.Equal(TimeSpan.FromSeconds(260), anna.TimeRemaining);
+        Assert.Equal(TimeSpan.FromSeconds(240), bram.TimeRemaining);
+        Assert.Equal(Now.AddSeconds(100) + TimeSpan.FromSeconds(240), game.TurnDeadline);
+    }
+
+    [Fact]
+    public void Clock_is_not_out_until_the_time_is_fully_used()
+    {
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag);
+
+        Assert.False(game.ExpireTurnIfOverdue(Now + FiveMinutes));
+        Assert.Equal(TimeSpan.Zero, game.GetTimeRemaining(game.Players[0], Now + FiveMinutes));
+        Assert.Equal(GameStatus.InProgress, game.Status);
+    }
+
+    [Fact]
+    public void Running_out_of_time_loses_the_game()
+    {
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag);
+        var anna = game.Players[0];
+
+        Assert.True(game.ExpireTurnIfOverdue(Now + FiveMinutes + TimeSpan.FromMilliseconds(1)));
 
         Assert.Equal(GameStatus.Finished, game.Status);
         Assert.True(anna.HasResigned);
+        Assert.Equal(TimeSpan.Zero, anna.TimeRemaining);
         var move = Assert.Single(game.Moves);
         Assert.Equal((anna.Id, MoveType.Timeout), (move.PlayerId, move.Type));
         Assert.Equal([game.Players[1]], game.Winners);
@@ -377,24 +444,73 @@ public class GameTests
     }
 
     [Fact]
-    public void Moving_after_the_deadline_is_rejected_and_counts_as_timeout()
+    public void Moving_after_running_out_of_time_is_rejected_and_counts_as_timeout()
     {
         var game = TestGames.Start(Rack1, Rack2, RestOfBag);
 
         AssertRejected(
             DomainErrors.GameFinished,
-            () => game.PlaceTiles(game.Players[0].Id, TestGames.Word("KAT", 7, 7), Dictionary, Now.AddDays(4)));
+            () => game.PlaceTiles(game.Players[0].Id, TestGames.Word("KAT", 7, 7), Dictionary, Now.AddMinutes(6)));
 
         Assert.Equal(MoveType.Timeout, Assert.Single(game.Moves).Type);
         Assert.True(game.Board.IsEmpty);
     }
 
     [Fact]
-    public void Without_a_time_limit_turns_never_expire()
+    public void Clocks_stop_when_the_game_ends()
     {
-        var game = TestGames.Start(Rack1, Rack2, RestOfBag, GameRules.Default with { TurnTimeLimit = null });
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag);
+        var anna = game.Players[0];
+
+        game.Resign(game.Players[1].Id, Now.AddSeconds(40));
+
+        Assert.Equal(TimeSpan.FromSeconds(260), game.GetTimeRemaining(anna, Now.AddHours(1)));
+    }
+
+    // --- Limiet per beurt (correspondentie) ---
+
+    private static readonly GameRules Correspondence =
+        GameRules.Default with { TimePerPlayer = null, TurnTimeLimit = TimeSpan.FromHours(72) };
+
+    [Fact]
+    public void Turn_limit_sets_a_deadline_per_turn()
+    {
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag, Correspondence);
+        var later = Now.AddHours(50);
+
+        Assert.Equal(Now.AddHours(72), game.TurnDeadline);
+        game.Pass(game.Players[0].Id, later);
+
+        Assert.Equal(later.AddHours(72), game.TurnDeadline);
+        Assert.Null(game.Players[0].TimeRemaining);
+    }
+
+    [Fact]
+    public void Missing_the_turn_limit_loses_the_game()
+    {
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag, Correspondence);
+
+        Assert.False(game.ExpireTurnIfOverdue(Now.AddHours(72)));
+        Assert.True(game.ExpireTurnIfOverdue(Now.AddHours(72).AddSeconds(1)));
+        Assert.Equal([game.Players[1]], game.Winners);
+    }
+
+    [Fact]
+    public void With_clock_and_turn_limit_the_earliest_deadline_counts()
+    {
+        var rules = GameRules.Default with { TurnTimeLimit = TimeSpan.FromMinutes(1) };
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag, rules);
+
+        Assert.Equal(Now.AddMinutes(1), game.TurnDeadline);
+    }
+
+    [Fact]
+    public void Without_any_time_limit_turns_never_expire()
+    {
+        var game = TestGames.Start(Rack1, Rack2, RestOfBag, GameRules.Default with { TimePerPlayer = null });
 
         Assert.Null(game.TurnDeadline);
+        Assert.Null(game.GetTimeRemaining(game.Players[0], Now.AddYears(1)));
         Assert.False(game.ExpireTurnIfOverdue(Now.AddYears(1)));
     }
 

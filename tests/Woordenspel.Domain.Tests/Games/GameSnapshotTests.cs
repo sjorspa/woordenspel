@@ -50,6 +50,18 @@ public class GameSnapshotTests
     }
 
     [Fact]
+    public void Clocks_survive_a_restore()
+    {
+        var game = TestGames.Start("KA?BEDS", "WOORDEN", "AEIOUNRSTL");
+        game.Pass(game.Players[0].Id, Now.AddSeconds(30));
+
+        var restored = Game.Restore(game.ToSnapshot(), new PredictableRandomizer());
+
+        Assert.Equal(TimeSpan.FromSeconds(270), restored.Players[0].TimeRemaining);
+        Assert.Equal(game.TurnDeadline, restored.TurnDeadline);
+    }
+
+    [Fact]
     public void Snapshot_survives_json_serialization()
     {
         var snapshot = PlayedGame().ToSnapshot();

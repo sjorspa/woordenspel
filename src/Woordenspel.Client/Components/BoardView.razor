@@ -1,0 +1,76 @@
+@* Het speelbord: vaste stenen, stenen die de speler nog aan het neerleggen is, en de premievakjes. *@
+<div class="board" style="--size: @Setup.BoardSize">
+    @for (var row = 0; row < Setup.BoardSize; row++)
+    {
+        @for (var column = 0; column < Setup.BoardSize; column++)
+        {
+            var (r, c) = (row, column);
+            var tile = _tiles.GetValueOrDefault((r, c));
+            var pending = Draft?.PendingAt(r, c);
+            var bonus = _bonuses.GetValueOrDefault((r, c));
+            <div class="square @BonusClass(bonus) @(IsCenter(r, c) ? "start" : "")"
+                 data-row="@r" data-column="@c"
+                 @onclick="() => OnSquareClick.InvokeAsync(new BoardPosition(r, c))"
+                 @ondragover:preventDefault="true"
+                 @ondrop="() => OnTileDrop.InvokeAsync(new BoardPosition(r, c))">
+                @if (tile is not null)
+                {
+                    <TileView Letter="tile.Letter" Points="tile.Points" IsBlank="tile.IsBlank"
+                              Class="@(Highlight.Contains(new BoardPosition(r, c)) ? "last-move" : null)" />
+                }
+                else if (pending is not null)
+                {
+                    <TileView Letter="pending.Letter" Points="pending.Points" IsBlank="pending.IsBlank" Class="pending" />
+                }
+                else
+                {
+                    <span class="label">@(IsCenter(r, c) ? "★" : BonusLabel(bonus))</span>
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private Dictionary<(int, int), BoardTileDto> _tiles = [];
+    private Dictionary<(int, int), SquareBonus> _bonuses = [];
+
+    [Parameter, EditorRequired] public SetupDto Setup { get; set; } = default!;
+
+    [Parameter, EditorRequired] public BoardDto Board { get; set; } = default!;
+
+    [Parameter] public PlacementDraft? Draft { get; set; }
+
+    /// <summary>Vakjes die extra opvallen, zoals de laatste zet.</summary>
+    [Parameter] public IReadOnlySet<BoardPosition> Highlight { get; set; } = new HashSet<BoardPosition>();
+
+    [Parameter] public EventCallback<BoardPosition> OnSquareClick { get; set; }
+
+    [Parameter] public EventCallback<BoardPosition> OnTileDrop { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        _tiles = Board.Tiles.ToDictionary(t => (t.Row, t.Column));
+        _bonuses = Setup.BonusSquares.ToDictionary(b => (b.Row, b.Column), b => b.Bonus);
+    }
+
+    private bool IsCenter(int row, int column) => row == Setup.CenterRow && column == Setup.CenterColumn;
+
+    private static string BonusClass(SquareBonus bonus) => bonus switch
+    {
+        SquareBonus.DoubleLetter => "dl",
+        SquareBonus.TripleLetter => "tl",
+        SquareBonus.DoubleWord => "dw",
+        SquareBonus.TripleWord => "tw",
+        _ => string.Empty,
+    };
+
+    private static string BonusLabel(SquareBonus bonus) => bonus switch
+    {
+        SquareBonus.DoubleLetter => "DL",
+        SquareBonus.TripleLetter => "TL",
+        SquareBonus.DoubleWord => "DW",
+        SquareBonus.TripleWord => "TW",
+        _ => string.Empty,
+    };
+}

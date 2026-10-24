@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
-using Woordenspel.Api.Contracts;
+using Woordenspel.Contracts;
 using Woordenspel.Application;
 using Woordenspel.Domain.Games;
 using static Woordenspel.Api.Tests.ApiAssert;

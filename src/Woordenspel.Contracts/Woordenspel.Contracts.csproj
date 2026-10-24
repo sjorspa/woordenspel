@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Woordenspel.Domain\Woordenspel.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

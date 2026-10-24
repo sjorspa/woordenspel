@@ -29,6 +29,22 @@ public sealed class EfUserRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Guest_without_password_is_stored_and_loaded()
+    {
+        var guest = User.RegisterGuest(Guid.NewGuid(), "SnelleVos42", TestGames.Now);
+        await using (var db = _database.CreateContext())
+        {
+            await new EfUserRepository(db).AddAsync(guest, default);
+        }
+
+        await using var readDb = _database.CreateContext();
+        var loaded = await new EfUserRepository(readDb).FindByUsernameAsync("snellevos42", default);
+
+        Assert.NotNull(loaded);
+        Assert.True(loaded.IsGuest);
+    }
+
+    [Fact]
     public async Task Unknown_user_returns_null()
     {
         await using var db = _database.CreateContext();

@@ -1,0 +1,521 @@
+:root {
+    --bg: #14202b;
+    --surface: #1d2d3b;
+    --surface-2: #26394a;
+    --text: #eef3f7;
+    --muted: #9fb2c3;
+    --accent: #f5b942;
+    --danger: #e0564b;
+    --ok: #4cc38a;
+
+    --square: #2b4152;
+    --dl: #4f9fd0;
+    --tl: #2f7f56;
+    --dw: #d68132;
+    --tw: #b8463a;
+    --tile: #f2e2b3;
+    --tile-text: #2a2117;
+    --tile-pending: #ffd36b;
+    --tile-last: #fff1c4;
+
+    color-scheme: dark;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+a {
+    color: var(--accent);
+}
+
+h1, h2 {
+    margin: 0 0 0.75rem;
+    font-weight: 650;
+}
+
+h1 {
+    font-size: 1.4rem;
+}
+
+/* Blazor zet na het navigeren de focus op de h1 (voor schermlezers); een rand is daar niet nodig. */
+h1:focus {
+    outline: none;
+}
+
+h2 {
+    font-size: 1.1rem;
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.error {
+    color: var(--danger);
+}
+
+/* --- Opbouw --- */
+
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--surface-2);
+}
+
+.brand {
+    color: var(--text);
+    font-weight: 700;
+    text-decoration: none;
+    letter-spacing: 0.02em;
+}
+
+.user {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    color: var(--muted);
+}
+
+.page {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+.card {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.card.narrow {
+    max-width: 380px;
+    margin: 2rem auto;
+}
+
+.loading {
+    padding: 3rem;
+    text-align: center;
+    color: var(--muted);
+}
+
+/* --- Formulieren en knoppen --- */
+
+label {
+    display: block;
+    margin-bottom: 0.75rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+input {
+    display: block;
+    width: 100%;
+    margin-top: 0.25rem;
+    padding: 0.6rem 0.7rem;
+    border: 1px solid var(--surface-2);
+    border-radius: 8px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 1rem;
+}
+
+form.inline {
+    display: flex;
+    gap: 0.5rem;
+}
+
+form.inline input {
+    margin: 0;
+}
+
+button, .button {
+    padding: 0.55rem 0.9rem;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #1a1407;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+}
+
+button.secondary {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+button.danger {
+    background: var(--danger);
+    color: white;
+}
+
+button.link {
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    font-weight: 500;
+}
+
+button:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.badge {
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.own-name {
+    color: var(--text);
+}
+
+.small {
+    font-size: 0.85rem;
+}
+
+.divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.25rem 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.divider::before, .divider::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--surface-2);
+}
+
+button.guest {
+    width: 100%;
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+/* --- Overzicht --- */
+
+.game-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.game-list li a {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem 1rem;
+    padding: 0.7rem;
+    border-radius: 8px;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.game-list li a:hover {
+    background: var(--surface-2);
+}
+
+.game-list li.your-turn a {
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.game-list .player {
+    display: flex;
+    gap: 0.5rem;
+    align-items: baseline;
+}
+
+.game-list .status {
+    grid-column: 1 / -1;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.score {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+/* --- Klok --- */
+
+.clock {
+    margin-left: auto;
+    min-width: 4.2em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--muted);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.clock.running {
+    background: var(--ok);
+    color: #08210f;
+    font-weight: 700;
+}
+
+.clock.running.low {
+    background: var(--danger);
+    color: white;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    50% { opacity: 0.7; }
+}
+
+/* --- Spel --- */
+
+.game {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.player-bar {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
+    background: var(--surface);
+}
+
+.player-bar.to-move {
+    box-shadow: inset 0 0 0 2px var(--ok);
+}
+
+.player-bar .name {
+    font-weight: 600;
+}
+
+.board {
+    display: grid;
+    grid-template-columns: repeat(var(--size), 1fr);
+    gap: 2px;
+    width: min(100%, 600px);
+    margin: 0 auto;
+    padding: 4px;
+    border-radius: 8px;
+    background: #0e1820;
+    user-select: none;
+}
+
+.square {
+    position: relative;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+    background: var(--square);
+    cursor: pointer;
+}
+
+.square.dl { background: var(--dl); }
+.square.tl { background: var(--tl); }
+.square.dw { background: var(--dw); }
+.square.tw { background: var(--tw); }
+
+.square .label {
+    font-size: clamp(0.4rem, 1.6vw, 0.7rem);
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.square.start .label {
+    font-size: clamp(0.7rem, 2.6vw, 1.1rem);
+    color: var(--accent);
+}
+
+.tile {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    background: var(--tile);
+    color: var(--tile-text);
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+
+.tile .letter {
+    font-weight: 800;
+    font-size: clamp(0.8rem, 3.2vw, 1.25rem);
+}
+
+.tile .points {
+    position: absolute;
+    right: 8%;
+    bottom: 4%;
+    font-size: clamp(0.35rem, 1.3vw, 0.6rem);
+    font-weight: 600;
+}
+
+.tile.blank .letter {
+    color: #8a6d2f;
+}
+
+.tile.pending {
+    background: var(--tile-pending);
+    outline: 2px solid #fff;
+}
+
+.tile.last-move {
+    background: var(--tile-last);
+    outline: 2px solid var(--accent);
+}
+
+.rack {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    width: min(100%, 460px);
+    margin: 0 auto;
+}
+
+.rack-slot {
+    aspect-ratio: 1;
+    cursor: grab;
+    border-radius: 6px;
+    transition: transform 0.1s;
+}
+
+.rack-slot .tile .letter {
+    font-size: clamp(1.1rem, 6vw, 1.8rem);
+}
+
+.rack-slot .tile .points {
+    font-size: clamp(0.55rem, 2.4vw, 0.8rem);
+}
+
+.rack-slot.empty {
+    background: var(--surface);
+    cursor: default;
+}
+
+.rack-slot.selected {
+    transform: translateY(-6px);
+    outline: 3px solid var(--accent);
+}
+
+.rack-slot.to-swap {
+    transform: translateY(-6px);
+    outline: 3px solid var(--danger);
+}
+
+.status-line {
+    min-height: 1.4em;
+    margin: 0;
+    text-align: center;
+    color: var(--muted);
+}
+
+.status-line.error {
+    color: var(--danger);
+}
+
+.result {
+    text-align: center;
+}
+
+.moves summary {
+    cursor: pointer;
+    color: var(--muted);
+}
+
+.moves ol {
+    max-height: 12rem;
+    overflow-y: auto;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+/* --- Blanco steen --- */
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 10;
+}
+
+.dialog {
+    background: var(--surface);
+    border-radius: 12px;
+    padding: 1rem;
+    width: min(92vw, 360px);
+    text-align: center;
+}
+
+.letter-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+    margin-bottom: 1rem;
+}
+
+.letter-choice {
+    padding: 0.6rem 0;
+    background: var(--tile);
+    color: var(--tile-text);
+    font-size: 1.1rem;
+}
+
+/* --- Foutmelding van Blazor --- */
+
+#blazor-error-ui {
+    background: lightyellow;
+    color: #222;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}

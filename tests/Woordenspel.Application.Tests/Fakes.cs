@@ -1,4 +1,5 @@
 using Woordenspel.Application.Abstractions;
+using Woordenspel.Contracts;
 using Woordenspel.Domain.Games;
 using Woordenspel.Domain.Users;
 using Woordenspel.TestSupport;
@@ -16,6 +17,9 @@ internal sealed class FakeGameRepository : IGameRepository
 
     public Task<IReadOnlyList<Game>> ListForPlayerAsync(Guid playerId, CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<Game>>(_games.Values.Where(g => g.Players.Any(p => p.Id == playerId)).ToList());
+
+    public Task<IReadOnlyList<Game>> ListOverdueAsync(DateTimeOffset now, CancellationToken cancellationToken) =>
+        Task.FromResult<IReadOnlyList<Game>>(_games.Values.Where(g => g.TurnDeadline <= now).ToList());
 
     public Task SaveAsync(Game game, CancellationToken cancellationToken)
     {
@@ -47,6 +51,17 @@ internal sealed class FakeUserRepository : IUserRepository
     public Task AddAsync(User user, CancellationToken cancellationToken)
     {
         _users.Add(user);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeGameNotifier : IGameNotifier
+{
+    public List<(Guid PlayerId, GameDto Game)> Sent { get; } = [];
+
+    public Task GameUpdatedAsync(Guid playerId, GameDto game, CancellationToken cancellationToken)
+    {
+        Sent.Add((playerId, game));
         return Task.CompletedTask;
     }
 }

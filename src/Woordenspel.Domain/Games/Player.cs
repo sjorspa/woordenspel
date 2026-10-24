@@ -22,9 +22,9 @@ public sealed class Player
         Name = trimmed;
     }
 
-    internal static Player Restore(Guid id, string name, int score, bool hasResigned, IEnumerable<Tile> rack)
+    internal static Player Restore(Guid id, string name, int score, bool hasResigned, TimeSpan? timeRemaining, IEnumerable<Tile> rack)
     {
-        var player = new Player(id, name) { Score = score, HasResigned = hasResigned };
+        var player = new Player(id, name) { Score = score, HasResigned = hasResigned, TimeRemaining = timeRemaining };
         player.AddTiles(rack);
         return player;
     }
@@ -37,6 +37,12 @@ public sealed class Player
 
     /// <summary>Opgegeven of de bedenktijd overschreden; zo'n speler kan niet winnen.</summary>
     public bool HasResigned { get; private set; }
+
+    /// <summary>
+    /// Resterende bedenktijd aan het begin van de huidige beurt; zie <see cref="Game.GetTimeRemaining"/> voor
+    /// de tijd op een bepaald moment. Null als er zonder klok wordt gespeeld.
+    /// </summary>
+    public TimeSpan? TimeRemaining { get; internal set; }
 
     public IReadOnlyList<Tile> Rack => _rack.Tiles;
 

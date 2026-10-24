@@ -16,6 +16,9 @@ public sealed class GameRecord
 
     public int Version { get; set; }
 
+    /// <summary>Kopie van <see cref="Game.TurnDeadline"/>, zodat verlopen beurten snel te vinden zijn.</summary>
+    public DateTimeOffset? TurnDeadline { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset UpdatedAt { get; set; }

@@ -1,0 +1,31 @@
+@* Het plankje. Stenen die al op het bord liggen laten een lege plek achter. *@
+<div class="rack @(SwapMode ? "swap-mode" : "")">
+    @foreach (var slot in Draft.Rack)
+    {
+        var id = slot.Id;
+        if (Draft.IsOnBoard(id))
+        {
+            <div class="rack-slot empty"></div>
+        }
+        else
+        {
+            <div class="rack-slot @(Draft.SelectedSlotId == id ? "selected" : "") @(Draft.SwapSelection.Contains(id) ? "to-swap" : "")"
+                 draggable="true"
+                 data-slot="@id"
+                 @ondragstart="() => OnSlotDragStart.InvokeAsync(id)"
+                 @onclick="() => OnSlotClick.InvokeAsync(id)">
+                <TileView Letter="slot.Tile.Letter" Points="slot.Tile.Points" IsBlank="slot.Tile.IsBlank" />
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PlacementDraft Draft { get; set; } = default!;
+
+    [Parameter] public bool SwapMode { get; set; }
+
+    [Parameter] public EventCallback<int> OnSlotClick { get; set; }
+
+    [Parameter] public EventCallback<int> OnSlotDragStart { get; set; }
+}

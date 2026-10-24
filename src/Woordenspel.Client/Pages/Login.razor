@@ -1,0 +1,77 @@
+@page "/login"
+@inject ApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Navigation
+
+<PageTitle>Inloggen – Woordenspel</PageTitle>
+
+<section class="card narrow">
+    <h1>Woordenspel</h1>
+    <p class="muted">Blitz: 5 minuten per speler. Wie door zijn tijd heen is, verliest.</p>
+
+    <form @onsubmit="LoginAsync" @onsubmit:preventDefault="true">
+        <label>
+            Gebruikersnaam
+            <input @bind="_username" autocomplete="username" required />
+        </label>
+        <label>
+            Wachtwoord
+            <input type="password" @bind="_password" autocomplete="current-password" required />
+        </label>
+
+        @if (_error is not null)
+        {
+            <p class="error" role="alert">@_error</p>
+        }
+
+        <div class="actions">
+            <button type="submit" disabled="@_busy">Inloggen</button>
+            <button type="button" class="secondary" disabled="@_busy" @onclick="RegisterAsync">Registreren</button>
+        </div>
+    </form>
+
+    <div class="divider"><span>of</span></div>
+
+    <button type="button" class="guest" disabled="@_busy" @onclick="PlayAsGuestAsync">Speel als gast</button>
+    <p class="muted small">Je krijgt een willekeurige naam. Zonder wachtwoord kun je later niet terug naar dit account.</p>
+</section>
+
+@code {
+    private string _username = string.Empty;
+    private string _password = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    protected override void OnInitialized()
+    {
+        if (Auth.IsLoggedIn)
+        {
+            Navigation.NavigateTo("");
+        }
+    }
+
+    private Task LoginAsync() => SignInAsync(() => Api.LoginAsync(_username, _password));
+
+    private Task RegisterAsync() => SignInAsync(() => Api.RegisterAsync(_username, _password));
+
+    private Task PlayAsGuestAsync() => SignInAsync(Api.PlayAsGuestAsync);
+
+    private async Task SignInAsync(Func<Task<AuthResponse>> request)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Auth.SignInAsync(await request());
+            Navigation.NavigateTo("");
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

@@ -1,0 +1,18 @@
+@* Eén speelsteen. Een blanco steen op het plankje heeft nog geen letter en geen punten. *@
+<div class="tile @(IsBlank ? "blank" : "") @Class">
+    <span class="letter">@(Letter == '?' ? "" : Letter.ToString())</span>
+    @if (!IsBlank)
+    {
+        <span class="points">@Points</span>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public char Letter { get; set; }
+
+    [Parameter] public int Points { get; set; }
+
+    [Parameter] public bool IsBlank { get; set; }
+
+    [Parameter] public string? Class { get; set; }
+}

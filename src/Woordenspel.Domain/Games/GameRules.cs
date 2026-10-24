@@ -23,7 +23,14 @@ public sealed record GameRules
     public int ScorelessTurnsPerPlayerToEnd { get; init; } = 2;
 
     /// <summary>
-    /// Bedenktijd per beurt. Wie niet op tijd speelt, verliest het spel. Null betekent geen limiet.
+    /// Totale bedenktijd per speler, zoals een schaakklok: je klok loopt alleen als jij aan de beurt bent.
+    /// Wie door zijn tijd heen is, verliest. Null betekent geen klok. Standaard een blitzpartij van 5 minuten.
     /// </summary>
-    public TimeSpan? TurnTimeLimit { get; init; } = TimeSpan.FromHours(72);
+    public TimeSpan? TimePerPlayer { get; init; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Maximale bedenktijd per beurt, bijvoorbeeld 72 uur voor correspondentiespellen. Wie te laat is, verliest.
+    /// Null betekent geen limiet per beurt.
+    /// </summary>
+    public TimeSpan? TurnTimeLimit { get; init; }
 }

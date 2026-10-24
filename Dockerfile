@@ -7,6 +7,8 @@ WORKDIR /src
 COPY Directory.Build.props ./
 COPY src/Woordenspel.Domain/Woordenspel.Domain.csproj src/Woordenspel.Domain/
 COPY src/Woordenspel.Application/Woordenspel.Application.csproj src/Woordenspel.Application/
+COPY src/Woordenspel.Contracts/Woordenspel.Contracts.csproj src/Woordenspel.Contracts/
+COPY src/Woordenspel.Client/Woordenspel.Client.csproj src/Woordenspel.Client/
 COPY src/Woordenspel.Infrastructure/Woordenspel.Infrastructure.csproj src/Woordenspel.Infrastructure/
 COPY src/Woordenspel.Api/Woordenspel.Api.csproj src/Woordenspel.Api/
 RUN dotnet restore src/Woordenspel.Api/Woordenspel.Api.csproj

@@ -1,0 +1,37 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject AuthState Auth
+@inject NavigationManager Navigation
+
+<header class="topbar">
+    <a class="brand" href="">Woordenspel</a>
+    @if (Auth.User is { } user)
+    {
+        <span class="user">
+            @user.Username
+            @if (user.IsGuest)
+            {
+                <span class="badge">Gast</span>
+            }
+            <button class="link" @onclick="SignOutAsync">Uitloggen</button>
+        </span>
+    }
+</header>
+
+<main class="page">
+    @Body
+</main>
+
+@code {
+    protected override void OnInitialized() => Auth.Changed += OnAuthChanged;
+
+    public void Dispose() => Auth.Changed -= OnAuthChanged;
+
+    private void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    private async Task SignOutAsync()
+    {
+        await Auth.SignOutAsync();
+        Navigation.NavigateTo("login");
+    }
+}

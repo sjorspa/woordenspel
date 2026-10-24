@@ -1,3 +1,4 @@
+using Woordenspel.Contracts;
 using Woordenspel.Domain;
 using Woordenspel.Domain.Boards;
 using Woordenspel.Domain.Games;
@@ -14,6 +15,7 @@ public class GameServiceTests
 {
     private readonly FakeGameRepository _repository = new();
     private readonly FakeUserRepository _users = new();
+    private readonly FakeGameNotifier _notifier = new();
     private readonly FakeTimeProvider _clock = new();
     private readonly GameService _service;
     private readonly User _anna;
@@ -167,15 +169,88 @@ public class GameServiceTests
     }
 
     [Fact]
-    public async Task Game_shows_the_deadline_of_the_current_turn()
+    public async Task Game_shows_the_clocks_at_server_time()
     {
         var created = await _service.CreateGameAsync(_anna.Id, "Bram");
-        _clock.Advance(TimeSpan.FromHours(1));
+        _clock.Advance(TimeSpan.FromSeconds(20));
+
+        var game = await _service.GetGameAsync(created.Id, _bram.Id);
+
+        Assert.Equal(_clock.Now, game.ServerTime);
+        Assert.Equal([280_000L, 300_000L], game.Players.Select(p => p.TimeRemainingMs));
+        Assert.Equal(FakeTimeProvider.Start.AddMinutes(5), game.TurnDeadline);
+    }
+
+    [Fact]
+    public async Task Moving_stops_your_clock()
+    {
+        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        _clock.Advance(TimeSpan.FromSeconds(30));
 
         var result = await _service.PassAsync(created.Id, _anna.Id);
 
-        Assert.Equal(FakeTimeProvider.Start.AddHours(72), created.TurnDeadline);
-        Assert.Equal(_clock.Now.AddHours(72), result.Game.TurnDeadline);
+        Assert.Equal([270_000L, 300_000L], result.Game.Players.Select(p => p.TimeRemainingMs));
+        Assert.Equal(_clock.Now.AddMinutes(5), result.Game.TurnDeadline);
+    }
+
+    [Fact]
+    public async Task Both_players_are_notified_with_their_own_view()
+    {
+        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        _notifier.Sent.Clear();
+
+        await _service.PlaceTilesAsync(created.Id, _anna.Id, [new(7, 7, 'A'), new(7, 8, 'A')]);
+
+        Assert.Equal([_anna.Id, _bram.Id], _notifier.Sent.Select(s => s.PlayerId));
+        Assert.All(_notifier.Sent, s => Assert.Equal(".......AA......", s.Game.Board.Rows[7]));
+        Assert.Equal("BBCCDDD", Letters(_notifier.Sent[1].Game.Rack));
+    }
+
+    [Fact]
+    public async Task Creating_a_game_notifies_the_opponent()
+    {
+        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+
+        Assert.Contains(_notifier.Sent, s => s.PlayerId == _bram.Id && s.Game.Id == created.Id);
+    }
+
+    [Fact]
+    public async Task Rejected_move_sends_no_notification()
+    {
+        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+        _notifier.Sent.Clear();
+
+        await Assert.ThrowsAsync<DomainException>(() => _service.PassAsync(created.Id, _bram.Id));
+
+        Assert.Empty(_notifier.Sent);
+    }
+
+    [Fact]
+    public async Task ExpireOverdueGames_ends_games_whose_clock_ran_out_and_notifies_players()
+    {
+        var overdue = await _service.CreateGameAsync(_anna.Id, "Bram");
+        _clock.Advance(TimeSpan.FromMinutes(4));
+        var stillRunning = await _service.CreateGameAsync(_anna.Id, "Bram");
+        _clock.Advance(TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1));
+        _notifier.Sent.Clear();
+
+        var expired = await _service.ExpireOverdueGamesAsync();
+
+        Assert.Equal(1, expired);
+        Assert.Equal(GameStatus.Finished, (await _service.GetGameAsync(overdue.Id, _anna.Id)).Status);
+        Assert.Equal(GameStatus.InProgress, (await _service.GetGameAsync(stillRunning.Id, _anna.Id)).Status);
+        Assert.Equal([_anna.Id, _bram.Id], _notifier.Sent.Select(s => s.PlayerId));
+        Assert.All(_notifier.Sent, s => Assert.Equal([_bram.Id], s.Game.WinnerIds));
+    }
+
+    [Fact]
+    public async Task Move_positions_are_included_in_the_history()
+    {
+        var created = await _service.CreateGameAsync(_anna.Id, "Bram");
+
+        var result = await _service.PlaceTilesAsync(created.Id, _anna.Id, [new(7, 7, 'A'), new(7, 8, 'A')]);
+
+        Assert.Equal([new PositionDto(7, 7), new PositionDto(7, 8)], result.Move.Positions);
     }
 
     [Fact]
@@ -238,7 +313,7 @@ public class GameServiceTests
     }
 
     private GameService CreateService(GameSetup setup, FakeWordDictionary dictionary) =>
-        new(_repository, _users, dictionary, new PredictableRandomizer(), _clock, setup);
+        new(_repository, _users, dictionary, new PredictableRandomizer(), _notifier, _clock, setup);
 
     private static string Letters(IEnumerable<RackTileDto> rack) => new(rack.Select(t => t.Letter).ToArray());
 }

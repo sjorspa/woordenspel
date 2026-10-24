@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Woordenspel.Api.Auth;
-using Woordenspel.Api.Contracts;
+using Woordenspel.Contracts;
 using Woordenspel.Application;
 
 namespace Woordenspel.Api.Endpoints;
@@ -13,6 +13,7 @@ public static class AccountEndpoints
         var account = app.MapGroup("/api/account").WithTags("Account");
         account.MapPost("/register", Register);
         account.MapPost("/login", Login);
+        account.MapPost("/guest", PlayAsGuest);
         account.MapGet("/me", Me).RequireAuthorization();
         return app;
     }
@@ -31,6 +32,14 @@ public static class AccountEndpoints
         return TypedResults.Ok(tokens.Issue(user));
     }
 
+    /// <summary>Maakt een gast aan met een willekeurige naam en logt die meteen in.</summary>
+    private static async Task<Created<AuthResponse>> PlayAsGuest(
+        AccountService accounts, JwtTokenIssuer tokens, CancellationToken cancellationToken)
+    {
+        var guest = await accounts.CreateGuestAsync(cancellationToken);
+        return TypedResults.Created("/api/account/me", tokens.Issue(guest));
+    }
+
     private static Ok<UserDto> Me(ClaimsPrincipal user) =>
-        TypedResults.Ok(new UserDto(user.GetUserId(), user.Identity?.Name ?? string.Empty));
+        TypedResults.Ok(new UserDto(user.GetUserId(), user.Identity?.Name ?? string.Empty, user.IsGuest()));
 }

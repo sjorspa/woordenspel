@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Woordenspel.Api.Contracts;
+using Woordenspel.Contracts;
 using Woordenspel.Application;
 
 namespace Woordenspel.Api.Auth;
@@ -28,10 +28,11 @@ public sealed class JwtTokenIssuer(IOptions<JwtOptions> options, SigningKeyProvi
             {
                 [JwtRegisteredClaimNames.Sub] = user.Id.ToString(),
                 [JwtRegisteredClaimNames.Name] = user.Username,
+                [AuthenticationSetup.GuestClaim] = user.IsGuest,
             },
             SigningCredentials = new SigningCredentials(keys.Key, SecurityAlgorithms.HmacSha256),
         });
 
-        return new AuthResponse(user.Id, user.Username, token, expiresAt);
+        return new AuthResponse(user.Id, user.Username, token, expiresAt, user.IsGuest);
     }
 }

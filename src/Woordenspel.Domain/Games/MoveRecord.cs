@@ -1,3 +1,4 @@
+using Woordenspel.Domain.Boards;
 using Woordenspel.Domain.Moves;
 
 namespace Woordenspel.Domain.Games;
@@ -9,16 +10,18 @@ public enum MoveType
     Pass,
     Resign,
 
-    /// <summary>De speler heeft niet binnen de bedenktijd gespeeld en verliest.</summary>
+    /// <summary>De speler is door zijn bedenktijd heen en verliest.</summary>
     Timeout,
 }
 
 /// <summary>Een gespeelde beurt in de geschiedenis van het spel.</summary>
 /// <param name="TileCount">Aantal gelegde of geruilde stenen.</param>
-public sealed record MoveRecord(Guid PlayerId, MoveType Type, int Score, IReadOnlyList<string> Words, int TileCount)
+/// <param name="Positions">Waar de stenen zijn gelegd; leeg bij andere zetten.</param>
+public sealed record MoveRecord(
+    Guid PlayerId, MoveType Type, int Score, IReadOnlyList<string> Words, int TileCount, IReadOnlyList<Position>? Positions = null)
 {
-    public static MoveRecord Placement(Guid playerId, PlacementResult result, int tileCount) =>
-        new(playerId, MoveType.Placement, result.Score, result.Words.Select(w => w.Text).ToList(), tileCount);
+    public static MoveRecord Placement(Guid playerId, PlacementResult result, IReadOnlyList<Position> positions) =>
+        new(playerId, MoveType.Placement, result.Score, result.Words.Select(w => w.Text).ToList(), positions.Count, positions);
 
     public static MoveRecord Swap(Guid playerId, int tileCount) => new(playerId, MoveType.Swap, 0, [], tileCount);
 

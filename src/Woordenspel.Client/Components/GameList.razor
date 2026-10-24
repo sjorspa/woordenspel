@@ -1,0 +1,53 @@
+@* Een lijst spellen in het overzicht, met de stand en de klokken. *@
+<section class="card">
+    <h2>@Title</h2>
+    @if (Games.Count == 0)
+    {
+        <p class="muted">@Empty</p>
+    }
+    else
+    {
+        <ul class="game-list">
+            @foreach (var game in Games)
+            {
+                var clock = GameClock.For(game, ReceivedAt);
+                <li class="@(game.IsYourTurn ? "your-turn" : "")">
+                    <a href="games/@game.Id">
+                        @foreach (var player in OrderedPlayers(game))
+                        {
+                            <span class="player @(player.Id == game.CurrentPlayerId ? "to-move" : "")">
+                                <span class="name">@(player.Id == ViewerId ? "Jij" : player.Name)</span>
+                                <span class="score">@player.Score</span>
+                                @if (game.Status == GameStatus.InProgress)
+                                {
+                                    <ClockView Clock="clock" PlayerId="player.Id" />
+                                }
+                            </span>
+                        }
+                        <span class="status">@StatusText(game)</span>
+                    </a>
+                </li>
+            }
+        </ul>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public IReadOnlyList<GameSummaryDto> Games { get; set; } = [];
+
+    [Parameter, EditorRequired] public Guid ViewerId { get; set; }
+
+    [Parameter, EditorRequired] public DateTimeOffset ReceivedAt { get; set; }
+
+    [Parameter] public string Empty { get; set; } = string.Empty;
+
+    /// <summary>Jijzelf eerst.</summary>
+    private IEnumerable<PlayerDto> OrderedPlayers(GameSummaryDto game) => game.Players.OrderBy(p => p.Id != ViewerId);
+
+    private string StatusText(GameSummaryDto game) =>
+        game.Status == GameStatus.Finished
+            ? GameText.Result(game.Players, game.WinnerIds, ViewerId)
+            : game.IsYourTurn ? "Jouw beurt" : "Wacht op tegenstander";
+}

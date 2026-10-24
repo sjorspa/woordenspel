@@ -1,0 +1,59 @@
+@* De klok van één speler. Loopt de klok, dan wordt hij tien keer per seconde ververst. *@
+@implements IDisposable
+@inject TimeProvider Time
+
+<span class="clock @(IsRunning ? "running" : "") @(IsLow ? "low" : "")" title="Resterende bedenktijd">@Text</span>
+
+@code {
+    private static readonly TimeSpan LowTime = TimeSpan.FromSeconds(30);
+    private CancellationTokenSource? _ticking;
+
+    [Parameter, EditorRequired] public GameClock Clock { get; set; } = default!;
+
+    [Parameter, EditorRequired] public Guid PlayerId { get; set; }
+
+    private TimeSpan? Remaining => Clock.Remaining(PlayerId, Time.GetUtcNow());
+
+    private bool IsRunning => Clock.IsRunning(PlayerId);
+
+    private bool IsLow => Remaining is { } remaining && remaining < LowTime;
+
+    private string Text => Remaining is { } remaining ? GameClock.Format(remaining) : "–";
+
+    protected override void OnParametersSet()
+    {
+        if (IsRunning && _ticking is null)
+        {
+            _ticking = new CancellationTokenSource();
+            _ = TickAsync(_ticking.Token);
+        }
+        else if (!IsRunning)
+        {
+            StopTicking();
+        }
+    }
+
+    public void Dispose() => StopTicking();
+
+    private async Task TickAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void StopTicking()
+    {
+        _ticking?.Cancel();
+        _ticking?.Dispose();
+        _ticking = null;
+    }
+}

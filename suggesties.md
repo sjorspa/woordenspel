@@ -22,8 +22,7 @@ posities nodig heeft. Dan heb je een goede basis voor 15: het spel echt in de br
 
 6. **Uitnodigingen.** Nu verschijnt een spel meteen bij je tegenstander. Met uitnodigingen kan die eerst
    accepteren of weigeren. Daarnaast: een willekeurige tegenstander zoeken, of meteen een revanche starten.
-7. **Posities opslaan in de zetgeschiedenis.** `MoveRecord` bewaart nu alleen de woorden en de score, niet waar
-   de stenen liggen. Een app kan de laatste zet daardoor niet oplichten of een spel terugspelen.
+7. ~~**Posities opslaan in de zetgeschiedenis.**~~ Gedaan: de laatste zet licht op in de frontend.
 8. **Tegen de computer spelen.** De bot uit het testpotje omzetten naar C#, als tegenstander met een instelbaar
    niveau.
 9. **Chat per spel** en **statistieken**: gewonnen en verloren spellen, gemiddelde score, beste woord, eventueel
@@ -31,9 +30,8 @@ posities nodig heeft. Dan heb je een goede basis voor 15: het spel echt in de br
 
 ## Techniek
 
-10. **Live updates met SignalR.** Dan ziet je tegenstander je zet meteen, zonder steeds te hoeven verversen.
-11. **Een achtergrondtaak voor verlopen beurten.** Een verlopen beurt wordt nu pas verwerkt als iemand het spel
-    opent. Dit is nodig voor meldingen als "je tegenstander was te laat".
+10. ~~**Live updates met SignalR.**~~ Gedaan.
+11. ~~**Een achtergrondtaak voor verlopen beurten.**~~ Gedaan: elke seconde wordt gecontroleerd of iemands klok op 0 staat.
 12. **Een testpagina met inlogknop.** Met Scalar of Swagger UI kun je de API in de browser uitproberen, inclusief
     het meesturen van je token. Nu moet dat via het `.http`-bestand.
 13. **CI met GitHub Actions**, die bij elke push de tests en de Docker-build draait.
@@ -42,5 +40,14 @@ posities nodig heeft. Dan heb je een goede basis voor 15: het spel echt in de br
 
 ## Een frontend
 
-15. Nu is er alleen een API. Een simpele webclient met een bord, een plankje en slepen van stenen maakt het echt
-    speelbaar. Kies je ooit voor een app, dan is dit ook een handige basis.
+15. ~~**Een frontend.**~~ Gedaan: Blazor WebAssembly, met blitzspellen en een live klok.
+
+## Blitz
+
+16. **Tijdsinstelling kiezen** bij het starten: bijvoorbeeld 1, 3, 5 of 10 minuten. `GameRules.TimePerPlayer` staat
+    al per spel opgeslagen; alleen het startverzoek en de lobby moeten de keuze doorgeven.
+17. **Increment (Fischer):** een paar seconden extra na elke zet, zoals bij schaken. Dan word je niet gestraft voor
+    een lang spel met veel korte zetten.
+18. **Geluid of trilling** als je aan de beurt bent en in de laatste 30 seconden.
+19. **Snel een tegenstander vinden:** een wachtrij voor blitzspellen, zodat je niet eerst een gebruikersnaam hoeft
+    te weten.

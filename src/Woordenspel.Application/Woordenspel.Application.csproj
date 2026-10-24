@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Woordenspel.Domain\Woordenspel.Domain.csproj" />
+    <ProjectReference Include="..\Woordenspel.Contracts\Woordenspel.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

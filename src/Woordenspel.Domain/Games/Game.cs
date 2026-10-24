@@ -50,9 +50,28 @@ public sealed class Game
 
     public DateTimeOffset TurnStartedAt { get; private set; }
 
-    /// <summary>Uiterlijk moment voor de huidige zet; null als er geen limiet is of het spel voorbij is.</summary>
-    public DateTimeOffset? TurnDeadline =>
-        Status == GameStatus.InProgress && Rules.TurnTimeLimit is { } limit ? TurnStartedAt + limit : null;
+    /// <summary>
+    /// Het moment waarop de speler die aan de beurt is verliest als hij niet speelt: als zijn klok op 0 staat of
+    /// de limiet per beurt verstreken is, wat het eerst komt. Null zonder tijdslimiet of als het spel voorbij is.
+    /// </summary>
+    public DateTimeOffset? TurnDeadline
+    {
+        get
+        {
+            if (Status != GameStatus.InProgress)
+            {
+                return null;
+            }
+
+            DateTimeOffset? byClock = CurrentPlayer.TimeRemaining is { } remaining ? TurnStartedAt + remaining : null;
+            DateTimeOffset? byTurnLimit = Rules.TurnTimeLimit is { } limit ? TurnStartedAt + limit : null;
+            return (byClock, byTurnLimit) switch
+            {
+                ({ } clock, { } turn) => clock < turn ? clock : turn,
+                _ => byClock ?? byTurnLimit,
+            };
+        }
+    }
 
     public IReadOnlyBoard Board => _board;
 
@@ -104,7 +123,7 @@ public sealed class Game
             throw new DomainException(DomainErrors.DuplicatePlayer, "Je kunt niet tegen jezelf spelen.");
         }
 
-        var gamePlayers = players.Select(p => new Player(p.Id, p.Name)).ToList();
+        var gamePlayers = players.Select(p => new Player(p.Id, p.Name) { TimeRemaining = rules.TimePerPlayer }).ToList();
         foreach (var player in gamePlayers)
         {
             player.AddTiles(bag.Draw(rules.RackSize));
@@ -120,7 +139,7 @@ public sealed class Game
         Rules,
         _board.Layout.ToRows(),
         Status,
-        _players.Select(p => new PlayerSnapshot(p.Id, p.Name, p.Score, p.HasResigned, p.Rack.Select(TileSnapshot.From).ToList())).ToList(),
+        _players.Select(p => new PlayerSnapshot(p.Id, p.Name, p.Score, p.HasResigned, p.Rack.Select(TileSnapshot.From).ToList(), p.TimeRemaining)).ToList(),
         _currentPlayerIndex,
         _consecutiveScorelessTurns,
         TurnStartedAt,
@@ -138,7 +157,7 @@ public sealed class Game
         }
 
         var players = snapshot.Players
-            .Select(p => Player.Restore(p.Id, p.Name, p.Score, p.HasResigned, p.Rack.Select(t => t.ToTile())))
+            .Select(p => Player.Restore(p.Id, p.Name, p.Score, p.HasResigned, p.TimeRemaining, p.Rack.Select(t => t.ToTile())))
             .ToList();
         var bag = TileBag.Restore(snapshot.Bag.Select(t => t.ToTile()), randomizer);
 
@@ -155,8 +174,25 @@ public sealed class Game
         _players.FirstOrDefault(p => p.Id == playerId)
         ?? throw new DomainException(DomainErrors.PlayerNotInGame, "Deze speler doet niet mee aan dit spel.");
 
+    /// <summary>De bedenktijd die deze speler op <paramref name="now"/> nog heeft; null zonder klok.</summary>
+    public TimeSpan? GetTimeRemaining(Player player, DateTimeOffset now)
+    {
+        if (player.TimeRemaining is not { } remaining)
+        {
+            return null;
+        }
+
+        if (Status != GameStatus.InProgress || player != CurrentPlayer)
+        {
+            return remaining;
+        }
+
+        var left = remaining - (now - TurnStartedAt);
+        return left > TimeSpan.Zero ? left : TimeSpan.Zero;
+    }
+
     /// <summary>
-    /// Laat de speler die aan de beurt is verliezen als de bedenktijd om is.
+    /// Laat de speler die aan de beurt is verliezen als zijn bedenktijd om is.
     /// </summary>
     /// <returns>True als het spel hierdoor is beëindigd.</returns>
     public bool ExpireTurnIfOverdue(DateTimeOffset now)
@@ -166,6 +202,7 @@ public sealed class Game
             return false;
         }
 
+        StopClock(deadline);
         CurrentPlayer.Resign();
         _moves.Add(MoveRecord.Timeout(CurrentPlayer.Id));
         Status = GameStatus.Finished;
@@ -186,6 +223,7 @@ public sealed class Game
         var placedTiles = ToPlacedTiles(player, placements);
         var result = new PlacementEvaluator(dictionary, Rules).Evaluate(_board, placedTiles);
 
+        StopClock(now);
         player.TakeTiles(placements.Select(p => p.RackSymbol));
         foreach (var (position, tile) in placedTiles)
         {
@@ -196,7 +234,7 @@ public sealed class Game
         player.AddTiles(_bag.Draw(Rules.RackSize - player.Rack.Count));
         _consecutiveScorelessTurns = 0;
 
-        var move = MoveRecord.Placement(player.Id, result, placedTiles.Count);
+        var move = MoveRecord.Placement(player.Id, result, placedTiles.Select(t => t.Position).ToList());
         _moves.Add(move);
 
         if (player.Rack.Count == 0)
@@ -227,6 +265,7 @@ public sealed class Game
                 $"Ruilen kan alleen als er nog minstens {Rules.MinTilesInBagToSwap} stenen in de zak zitten.");
         }
 
+        StopClock(now);
         var returned = player.TakeTiles(symbols);
         player.AddTiles(_bag.Draw(returned.Count));
         _bag.Return(returned);
@@ -237,6 +276,7 @@ public sealed class Game
     public MoveRecord Pass(Guid playerId, DateTimeOffset now)
     {
         var player = EnsurePlayersTurn(playerId, now);
+        StopClock(now);
         return RecordScorelessTurn(MoveRecord.Pass(player.Id), now);
     }
 
@@ -246,6 +286,7 @@ public sealed class Game
         ExpireTurnIfOverdue(now);
         EnsureInProgress();
         var player = GetPlayer(playerId);
+        StopClock(now);
         player.Resign();
 
         var move = MoveRecord.Resign(player.Id);
@@ -297,6 +338,13 @@ public sealed class Game
 
         finisher?.AddScore(remainingPoints);
         Status = GameStatus.Finished;
+    }
+
+    /// <summary>Trekt de bedenktijd van deze beurt af van de klok van de speler die aan de beurt is.</summary>
+    private void StopClock(DateTimeOffset now)
+    {
+        CurrentPlayer.TimeRemaining = GetTimeRemaining(CurrentPlayer, now);
+        TurnStartedAt = now;
     }
 
     private void AdvanceTurn(DateTimeOffset now)

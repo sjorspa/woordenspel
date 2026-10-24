@@ -16,7 +16,8 @@ public sealed record GameSnapshot(
     IReadOnlyList<TileSnapshot> Bag,
     IReadOnlyList<MoveRecord> Moves);
 
-public sealed record PlayerSnapshot(Guid Id, string Name, int Score, bool HasResigned, IReadOnlyList<TileSnapshot> Rack);
+public sealed record PlayerSnapshot(
+    Guid Id, string Name, int Score, bool HasResigned, IReadOnlyList<TileSnapshot> Rack, TimeSpan? TimeRemaining = null);
 
 public sealed record BoardTileSnapshot(int Row, int Column, TileSnapshot Tile);
 

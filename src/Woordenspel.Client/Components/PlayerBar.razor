@@ -1,0 +1,17 @@
+@* Naam, score en klok van een speler boven of onder het bord. *@
+<div class="player-bar @(IsToMove ? "to-move" : "")">
+    <span class="name">@(Label ?? Player.Name)</span>
+    <span class="score">@Player.Score</span>
+    <ClockView Clock="Clock" PlayerId="Player.Id" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PlayerDto Player { get; set; } = default!;
+
+    [Parameter, EditorRequired] public GameClock Clock { get; set; } = default!;
+
+    [Parameter] public bool IsToMove { get; set; }
+
+    /// <summary>Wordt in plaats van de naam getoond, bijvoorbeeld "Jij".</summary>
+    [Parameter] public string? Label { get; set; }
+}

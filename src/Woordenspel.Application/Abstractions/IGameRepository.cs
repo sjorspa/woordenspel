@@ -8,6 +8,9 @@ public interface IGameRepository
 
     Task<IReadOnlyList<Game>> ListForPlayerAsync(Guid playerId, CancellationToken cancellationToken);
 
+    /// <summary>Lopende spellen waarvan de deadline van de huidige beurt op of vóór <paramref name="now"/> ligt.</summary>
+    Task<IReadOnlyList<Game>> ListOverdueAsync(DateTimeOffset now, CancellationToken cancellationToken);
+
     /// <summary>
     /// Voegt een nieuw spel toe of slaat de gewijzigde toestand op.
     /// </summary>

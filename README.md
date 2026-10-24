@@ -1,10 +1,11 @@
 # Woordenspel
 
-Een Wordfeud-kloon met Nederlandse woorden. Voorlopig alleen een HTTP-API, gebouwd in C# / .NET 10.
+Een Wordfeud-kloon met Nederlandse woorden, als blitzspel: elke speler heeft 5 minuten bedenktijd voor het hele
+spel. Een HTTP-API met een Blazor WebAssembly-frontend, gebouwd in C# / .NET 10.
 
 ## Starten
 
-Met Docker (de API draait dan op http://localhost:8080):
+Met Docker (open daarna http://localhost:8080 in je browser):
 
 ```bash
 docker compose up -d --build
@@ -16,9 +17,12 @@ De database en de sleutel voor tokens staan in het volume `woordenspel-data` en 
 Zonder Docker:
 
 ```bash
-dotnet run --project src/Woordenspel.Api   # data komt in ./App_Data
+dotnet run --project src/Woordenspel.Api   # http://localhost:5192, data komt in ./App_Data
 dotnet test
 ```
+
+Registreer twee accounts, of kies "Speel als gast" (bijvoorbeeld in twee browservensters, één in een
+privévenster), en start een spel door de gebruikersnaam van je tegenstander in te vullen.
 
 In Development staat het OpenAPI-document op `/openapi/v1.json`.
 [`src/Woordenspel.Api/Woordenspel.Api.http`](src/Woordenspel.Api/Woordenspel.Api.http) bevat voorbeeldverzoeken.
@@ -28,15 +32,18 @@ In Development staat het OpenAPI-document op `/openapi/v1.json`.
 Clean Architecture: afhankelijkheden wijzen alleen naar binnen.
 
 ```
-Api ──► Infrastructure ──► Application ──► Domain
+Api ──► Infrastructure ──► Application ──► Contracts ──► Domain
+ └─► Client (Blazor) ─────────────────────────┘
 ```
 
 | Project | Verantwoordelijkheid |
 |---|---|
 | `Woordenspel.Domain` | Alle spelregels, zonder afhankelijkheden. `Game` is het aggregate; `PlacementEvaluator` controleert zetten, vindt gevormde woorden en berekent de score. `User` bevat de regels voor gebruikersnamen en wachtwoorden. Toeval (`IRandomizer`) en het woordenboek (`IWordDictionary`) zijn interfaces. |
-| `Woordenspel.Application` | Use cases in `GameService` en `AccountService`: laden, domein laten werken, opslaan, naar DTO's vertalen. Definieert de poorten `IGameRepository`, `IUserRepository` en `IPasswordHasher`. |
+| `Woordenspel.Contracts` | De DTO's en verzoeken van de API, gedeeld door server en frontend. |
+| `Woordenspel.Application` | Use cases in `GameService` en `AccountService`: laden, domein laten werken, opslaan, spelers op de hoogte brengen, naar DTO's vertalen. Definieert de poorten `IGameRepository`, `IUserRepository`, `IPasswordHasher` en `IGameNotifier`. |
 | `Woordenspel.Infrastructure` | SQLite via EF Core, de woordenlijst, wachtwoord-hashing (PBKDF2 van ASP.NET Core Identity) en `SystemRandomizer`. |
-| `Woordenspel.Api` | Minimal API-endpoints, JWT-authenticatie en het vertalen van fouten naar `ProblemDetails`. |
+| `Woordenspel.Api` | Minimal API-endpoints, JWT-authenticatie, de SignalR-hub voor realtime updates, de achtergrondtaak die verlopen klokken afhandelt, en het serveren van de frontend. |
+| `Woordenspel.Client` | De Blazor WebAssembly-frontend. De logica zit in gewone klassen (`GameClock`, `PlacementDraft`, `ApiClient`), zodat de Razor-componenten dun en de logica los testbaar is. |
 
 ### Opslag
 
@@ -57,8 +64,9 @@ dotnet ef migrations add <Naam> --project src/Woordenspel.Infrastructure \
   --startup-project src/Woordenspel.Api --output-dir Persistence/Migrations
 ```
 
-Tests staan per laag in `tests/`. De Infrastructure- en API-tests gebruiken een echte SQLite-database
-(in het geheugen of in een tijdelijke map). `Woordenspel.TestSupport` bevat gedeelde fakes: een randomizer die altijd 0 geeft
+Tests staan per project in `tests/`. De Infrastructure- en API-tests gebruiken een echte SQLite-database
+(in het geheugen of in een tijdelijke map); de API-tests verbinden ook echt met de SignalR-hub. De frontend wordt
+getest met [bUnit](https://bunit.dev): componenten en pagina's worden gerenderd met een nep-server. `Woordenspel.TestSupport` bevat gedeelde fakes: een randomizer die altijd 0 geeft
 (de letterzak blijft op volgorde en de eerste speler begint) en een `FakeTimeProvider` om de klok vooruit te zetten.
 Het domein leest zelf nooit de klok: acties krijgen het huidige tijdstip mee.
 
@@ -67,8 +75,10 @@ Het domein leest zelf nooit de klok: acties krijgen het huidige tijdstip mee.
 - Bord van 15×15 met de standaard Wordfeud-indeling; het eerste woord gaat over het middelste vakje.
 - 7 stenen per plankje, 2 spelers, 2 blanco stenen (0 punten). Wie begint, wordt willekeurig gekozen.
   Je kunt niet tegen jezelf spelen.
-- Je hebt 72 uur per beurt (`turnDeadline` in de spelstand). Wie te laat is, verliest. Dit wordt verwerkt zodra
-  het spel daarna wordt opgevraagd of iemand een actie doet.
+- **Blitz:** elke speler heeft 5 minuten voor het hele spel, zoals een schaakklok: alleen de klok van wie aan de
+  beurt is loopt. Wie op 0 staat, verliest. Een achtergrondtaak controleert dat elke seconde, zodat de tegenstander
+  het meteen ziet. Een limiet per beurt (zoals 72 uur bij correspondentiespellen) kan ook, via
+  `GameRules.TurnTimeLimit`, maar staat standaard uit.
 - Alle stenen van een zet liggen in één rij of kolom, zonder gaten, en sluiten aan op wat er al ligt.
 - Elk gevormd woord (ook kruiswoorden) moet in de woordenlijst staan.
 - Premievakjes tellen alleen voor nieuw gelegde stenen. Alle 7 stenen leggen geeft 40 bonuspunten.
@@ -84,6 +94,8 @@ Regels staan in `GameRules`, de letterverdeling in `LetterSet.Dutch` en de bordi
 ### Account
 
 Een gebruikersnaam heeft 3 tot 20 tekens (letters, cijfers of `_`), een wachtwoord minstens 8 tekens.
+Een gast is een gewone gebruiker zonder wachtwoord: hij kan spelen en uitgedaagd worden op zijn naam, maar kan
+niet opnieuw inloggen. Het token van een gast blijft wel 7 dagen in zijn browser bewaard.
 Registreren en inloggen geven een token terug (7 dagen geldig). Stuur dat mee als
 `Authorization: Bearer <token>` bij alle `/api/games`-verzoeken.
 
@@ -91,6 +103,7 @@ Registreren en inloggen geven een token terug (7 dagen geldig). Stuur dat mee al
 |---|---|---|
 | `POST` | `/api/account/register` | `{ "username": "anna", "password": "geheim123" }` → token |
 | `POST` | `/api/account/login` | Zelfde body → token |
+| `POST` | `/api/account/guest` | Zonder body → token voor een nieuwe gast met een willekeurige naam, zoals `VrolijkeVos42` |
 | `GET` | `/api/account/me` | Wie ben ik? |
 
 Er wordt een willekeurige ondertekeningssleutel gemaakt en in de datamap bewaard. Wil je zelf een sleutel opgeven,
@@ -110,6 +123,16 @@ Alle acties gelden voor de ingelogde gebruiker.
 | `POST` | `/api/games/{gameId}/swap` | Ruilen: `{ "letters": ["Q", "?"] }` (`?` is een blanco steen) |
 | `POST` | `/api/games/{gameId}/pass` | Passen |
 | `POST` | `/api/games/{gameId}/resign` | Opgeven |
+
+### Realtime (inloggen vereist)
+
+De frontend luistert via [SignalR](https://learn.microsoft.com/aspnet/core/signalr/introduction) op
+`/hubs/games` (het token gaat mee als `access_token` in de query). Na elke wijziging van een spel waarin je meedoet,
+stuurt de server `GameUpdated` met de spelstand zoals jij hem ziet: een nieuw spel, een zet, of een klok die is
+afgelopen.
+
+Elke spelstand bevat `serverTime` en per speler `timeRemainingMs`: de resterende tijd op dat moment. Een client telt
+vanaf ontvangst zelf af voor de speler die aan de beurt is; de klok van de eigen computer speelt dus geen rol.
 
 ### Overig (openbaar)
 

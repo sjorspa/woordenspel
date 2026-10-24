@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.HttpResults;
 using Woordenspel.Application;
+using Woordenspel.Contracts;
 
 namespace Woordenspel.Api.Endpoints;
 

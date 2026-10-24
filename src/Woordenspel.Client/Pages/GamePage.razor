@@ -1,0 +1,336 @@
+@page "/games/{GameId:guid}"
+@implements IAsyncDisposable
+@inject ApiClient Api
+@inject AuthState Auth
+@inject SetupCache SetupCache
+@inject IGameUpdates Updates
+@inject NavigationManager Navigation
+@inject TimeProvider Time
+
+<PageTitle>@(IsMyTurn ? "Jouw beurt" : "Spel") – Woordenspel</PageTitle>
+
+@if (_game is null || _setup is null || _clock is null)
+{
+    <p class="muted">@(_error ?? "Spel laden…")</p>
+}
+else
+{
+    var me = Me!;
+    var opponent = Opponent!;
+
+    <div class="game">
+        <PlayerBar Player="opponent" Clock="_clock" IsToMove="_game.CurrentPlayerId == opponent.Id" />
+
+        <BoardView Setup="_setup" Board="_game.Board" Draft="_draft" Highlight="_lastMove"
+                   OnSquareClick="OnSquareClickAsync" OnTileDrop="OnTileDropAsync" />
+
+        <PlayerBar Player="me" Clock="_clock" IsToMove="IsMyTurn" Label="Jij" />
+
+        <RackView Draft="_draft" SwapMode="_swapMode" OnSlotClick="OnSlotClick" OnSlotDragStart="id => _draggedSlotId = id" />
+
+        <p class="status-line @(_previewIsError ? "error" : "")" aria-live="polite">@StatusLine</p>
+
+        @if (_game.Status == GameStatus.InProgress)
+        {
+            <div class="actions">
+                @if (_swapMode)
+                {
+                    <button disabled="@(!IsMyTurn || _busy || _draft.SwapSelection.Count == 0)" @onclick="SwapAsync">
+                        Ruil @_draft.SwapSelection.Count
+                    </button>
+                    <button class="secondary" @onclick="ToggleSwapMode">Annuleren</button>
+                }
+                else
+                {
+                    <button disabled="@(!IsMyTurn || _busy || !_draft.HasPending)" @onclick="PlayAsync">Spelen</button>
+                    <button class="secondary" disabled="@(!_draft.HasPending)" @onclick="RecallAll">Terug</button>
+                    <button class="secondary" @onclick="Shuffle">Schudden</button>
+                    <button class="secondary" disabled="@(!IsMyTurn || _busy || !CanSwap)" @onclick="ToggleSwapMode">Ruilen</button>
+                    <button class="secondary" disabled="@(!IsMyTurn || _busy)" @onclick="PassAsync">Passen</button>
+                    @if (_confirmResign)
+                    {
+                        <button class="danger" disabled="@_busy" @onclick="ResignAsync">Zeker weten?</button>
+                    }
+                    else
+                    {
+                        <button class="secondary" @onclick="() => _confirmResign = true">Opgeven</button>
+                    }
+                }
+            </div>
+        }
+        else
+        {
+            <section class="card result">
+                <h2>@GameText.Result(_game.Players, _game.WinnerIds, me.Id)</h2>
+                <p>Jij @me.Score – @opponent.Score @opponent.Name</p>
+                <a class="button" href="">Naar mijn spellen</a>
+            </section>
+        }
+
+        <details class="moves" open>
+            <summary>Zetten · nog @_game.TilesInBag in de zak</summary>
+            <ol reversed>
+                @foreach (var move in _game.Moves.Reverse())
+                {
+                    <li>@GameText.Describe(move, NameOf(move.PlayerId))</li>
+                }
+            </ol>
+        </details>
+    </div>
+
+    @if (_pendingBlank is { } blank)
+    {
+        <BlankPicker OnPick="letter => PlaceBlankAsync(blank, letter)" OnCancel="() => _pendingBlank = null" />
+    }
+}
+
+@code {
+    private readonly PlacementDraft _draft = new();
+    private GameDto? _game;
+    private SetupDto? _setup;
+    private GameClock? _clock;
+    private IReadOnlySet<BoardPosition> _lastMove = new HashSet<BoardPosition>();
+    private CancellationTokenSource? _preview;
+    private string? _previewText;
+    private bool _previewIsError;
+    private string? _error;
+    private bool _busy;
+    private bool _swapMode;
+    private bool _confirmResign;
+    private int? _draggedSlotId;
+    private (int SlotId, BoardPosition Position)? _pendingBlank;
+
+    [Parameter] public Guid GameId { get; set; }
+
+    private Guid ViewerId => Auth.User?.UserId ?? Guid.Empty;
+
+    private PlayerDto? Me => _game?.Players.FirstOrDefault(p => p.Id == ViewerId);
+
+    private PlayerDto? Opponent => _game?.Players.FirstOrDefault(p => p.Id != ViewerId);
+
+    private bool IsMyTurn => _game?.CurrentPlayerId == ViewerId;
+
+    private bool CanSwap => _game!.TilesInBag >= _setup!.Rules.MinTilesInBagToSwap;
+
+    private string StatusLine =>
+        _error ?? _previewText ?? (_swapMode
+            ? "Kies de stenen die je wilt ruilen."
+            : _game?.Status != GameStatus.InProgress ? string.Empty
+            : IsMyTurn ? "Jouw beurt: leg een woord." : $"{Opponent?.Name} is aan de beurt.");
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsLoggedIn)
+        {
+            Navigation.NavigateTo("login");
+            return;
+        }
+
+        Updates.GameUpdated += OnGameUpdated;
+        Updates.Reconnected += ReloadAsync;
+        try
+        {
+            _setup = await SetupCache.GetAsync();
+            Apply(await Api.GetGameAsync(GameId));
+            await Updates.EnsureConnectedAsync();
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        catch (Exception)
+        {
+            _error = "Geen live verbinding; ververs de pagina om de nieuwste stand te zien.";
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Updates.GameUpdated -= OnGameUpdated;
+        Updates.Reconnected -= ReloadAsync;
+        _preview?.Cancel();
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task OnGameUpdated(GameDto game)
+    {
+        if (game.Id == GameId)
+        {
+            Apply(game);
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        Apply(await Api.GetGameAsync(GameId));
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Apply(GameDto game)
+    {
+        _game = game;
+        _clock = GameClock.For(game, Time.GetUtcNow());
+        var occupied = game.Board.Tiles.Select(t => (t.Row, t.Column)).ToHashSet();
+        _draft.Load(game.Rack, game.Board.Size, (row, column) => occupied.Contains((row, column)));
+
+        var lastPlacement = game.Moves.LastOrDefault(m => m.Type == MoveType.Placement);
+        _lastMove = (lastPlacement?.Positions ?? []).Select(p => new BoardPosition(p.Row, p.Column)).ToHashSet();
+
+        if (game.Status != GameStatus.InProgress || !IsMyTurn)
+        {
+            _swapMode = false;
+            _confirmResign = false;
+        }
+
+        SchedulePreview();
+    }
+
+    private void OnSlotClick(int slotId)
+    {
+        _error = null;
+        if (_swapMode)
+        {
+            _draft.ToggleSwap(slotId);
+        }
+        else
+        {
+            _draft.Select(slotId);
+        }
+    }
+
+    private Task OnSquareClickAsync(BoardPosition position)
+    {
+        _error = null;
+        if (_draft.PendingAt(position.Row, position.Column) is not null)
+        {
+            _draft.Recall(position.Row, position.Column);
+            SchedulePreview();
+            return Task.CompletedTask;
+        }
+
+        return _draft.SelectedSlotId is { } slotId ? PlaceAsync(slotId, position) : Task.CompletedTask;
+    }
+
+    private Task OnTileDropAsync(BoardPosition position)
+    {
+        var slotId = _draggedSlotId;
+        _draggedSlotId = null;
+        return slotId is { } id && !_swapMode ? PlaceAsync(id, position) : Task.CompletedTask;
+    }
+
+    private Task PlaceAsync(int slotId, BoardPosition position)
+    {
+        if (!_draft.CanPlaceAt(position.Row, position.Column))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (_draft.IsBlank(slotId))
+        {
+            _pendingBlank = (slotId, position);
+            return Task.CompletedTask;
+        }
+
+        _draft.Place(slotId, position.Row, position.Column);
+        SchedulePreview();
+        return Task.CompletedTask;
+    }
+
+    private Task PlaceBlankAsync((int SlotId, BoardPosition Position) blank, char letter)
+    {
+        _pendingBlank = null;
+        _draft.Place(blank.SlotId, blank.Position.Row, blank.Position.Column, letter);
+        SchedulePreview();
+        return Task.CompletedTask;
+    }
+
+    private void RecallAll()
+    {
+        _draft.RecallAll();
+        SchedulePreview();
+    }
+
+    private void Shuffle() => _draft.Shuffle(Random.Shared);
+
+    private void ToggleSwapMode()
+    {
+        _swapMode = !_swapMode;
+        _draft.ClearSwapSelection();
+        if (_swapMode)
+        {
+            _draft.RecallAll();
+            SchedulePreview();
+        }
+    }
+
+    private Task PlayAsync() => MoveAsync(() => Api.PlaceAsync(GameId, _draft.ToPlacements()));
+
+    private Task SwapAsync() => MoveAsync(() => Api.SwapAsync(GameId, _draft.SwapLetters()));
+
+    private Task PassAsync() => MoveAsync(() => Api.PassAsync(GameId));
+
+    private Task ResignAsync() => MoveAsync(() => Api.ResignAsync(GameId));
+
+    private async Task MoveAsync(Func<Task<MoveResultDto>> move)
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var result = await move();
+            _swapMode = false;
+            _confirmResign = false;
+            Apply(result.Game);
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Vraagt de score van de neergelegde stenen op, even nadat de speler is gestopt met schuiven.</summary>
+    private void SchedulePreview()
+    {
+        _preview?.Cancel();
+        _previewText = null;
+        _previewIsError = false;
+        if (!_draft.HasPending || _game?.Status != GameStatus.InProgress)
+        {
+            return;
+        }
+
+        _preview = new CancellationTokenSource();
+        _ = PreviewAsync(_draft.ToPlacements(), _preview.Token);
+    }
+
+    private async Task PreviewAsync(IReadOnlyList<TilePlacementDto> tiles, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(250, cancellationToken);
+            var preview = await Api.PreviewAsync(GameId, tiles, cancellationToken);
+            (_previewText, _previewIsError) = (GameText.Preview(preview), false);
+        }
+        catch (ApiException exception)
+        {
+            (_previewText, _previewIsError) = (exception.Message, true);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (!cancellationToken.IsCancellationRequested)
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string NameOf(Guid playerId) =>
+        playerId == ViewerId ? "Jij" : _game?.Players.FirstOrDefault(p => p.Id == playerId)?.Name ?? "?";
+}

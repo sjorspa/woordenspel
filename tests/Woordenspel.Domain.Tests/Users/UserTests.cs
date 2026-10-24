@@ -19,6 +19,36 @@ public class UserTests
         Assert.Equal(TestGames.Now, user.CreatedAt);
     }
 
+    [Fact]
+    public void Registered_user_is_not_a_guest()
+    {
+        Assert.False(User.Register(Guid.NewGuid(), "Anna", "hash", TestGames.Now).IsGuest);
+    }
+
+    [Fact]
+    public void Register_requires_a_password_hash()
+    {
+        Assert.Throws<ArgumentException>(() => User.Register(Guid.NewGuid(), "Anna", "", TestGames.Now));
+    }
+
+    [Fact]
+    public void Guest_has_no_password()
+    {
+        var guest = User.RegisterGuest(Guid.NewGuid(), "SnelleVos42", TestGames.Now);
+
+        Assert.True(guest.IsGuest);
+        Assert.Null(guest.PasswordHash);
+        Assert.Equal("SNELLEVOS42", guest.NormalizedUsername);
+    }
+
+    [Fact]
+    public void Guest_name_follows_the_username_rules()
+    {
+        var exception = Assert.Throws<DomainException>(() => User.RegisterGuest(Guid.NewGuid(), "a b", TestGames.Now));
+
+        Assert.Equal(DomainErrors.InvalidUsername, exception.Code);
+    }
+
     [Theory]
     [InlineData("ab")]
     [InlineData("eenveelstelangenaam123")]

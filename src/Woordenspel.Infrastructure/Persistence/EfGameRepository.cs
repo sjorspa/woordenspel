@@ -22,6 +22,14 @@ public sealed class EfGameRepository(WoordenspelDbContext db, GameSnapshotSerial
         return records.Select(r => serializer.Deserialize(r.State)).ToList();
     }
 
+    public async Task<IReadOnlyList<Game>> ListOverdueAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var records = await db.Games
+            .Where(g => g.Status == GameStatus.InProgress && g.TurnDeadline != null && g.TurnDeadline <= now)
+            .ToListAsync(cancellationToken);
+        return records.Select(r => serializer.Deserialize(r.State)).ToList();
+    }
+
     /// <remarks>
     /// Een bestaand spel moet in dezelfde scope eerst zijn geladen; de versie van dat moment wordt
     /// bij het opslaan gecontroleerd.
@@ -48,6 +56,7 @@ public sealed class EfGameRepository(WoordenspelDbContext db, GameSnapshotSerial
 
         record.State = serializer.Serialize(game);
         record.Status = game.Status;
+        record.TurnDeadline = game.TurnDeadline;
         record.UpdatedAt = now;
 
         try
@@ -56,6 +65,8 @@ public sealed class EfGameRepository(WoordenspelDbContext db, GameSnapshotSerial
         }
         catch (DbUpdateConcurrencyException exception)
         {
+            // Niet meer volgen, anders probeert een volgende SaveChanges in deze scope het opnieuw.
+            db.Entry(record).State = EntityState.Detached;
             throw new ConcurrencyConflictException(exception);
         }
     }

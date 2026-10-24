@@ -78,6 +78,48 @@ public sealed class EfGameRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task ListOverdue_returns_running_games_whose_deadline_has_passed()
+    {
+        var overdue = StartGame();
+        var finished = StartGame();
+        finished.Resign(_bram.Id, TestGames.Now);
+        await SaveInNewContextAsync(overdue);
+        await SaveInNewContextAsync(finished);
+
+        await using var db = _database.CreateContext();
+        var repository = _database.CreateGameRepository(db);
+        var deadline = overdue.TurnDeadline!.Value;
+
+        Assert.Empty(await repository.ListOverdueAsync(deadline.AddMilliseconds(-1), default));
+        Assert.Equal([overdue.Id], (await repository.ListOverdueAsync(deadline, default)).Select(g => g.Id));
+    }
+
+    [Fact]
+    public async Task Repository_can_save_again_after_a_concurrency_conflict()
+    {
+        var game = StartGame();
+        await SaveInNewContextAsync(game);
+
+        await using var db = _database.CreateContext();
+        var repository = _database.CreateGameRepository(db);
+        var copy = (await repository.FindAsync(game.Id, default))!;
+        await using (var otherDb = _database.CreateContext())
+        {
+            var other = _database.CreateGameRepository(otherDb);
+            var otherCopy = (await other.FindAsync(game.Id, default))!;
+            otherCopy.Pass(_anna.Id, TestGames.Now);
+            await other.SaveAsync(otherCopy, default);
+        }
+
+        copy.Pass(_anna.Id, TestGames.Now);
+        await Assert.ThrowsAsync<ConcurrencyConflictException>(() => repository.SaveAsync(copy, default));
+
+        var another = StartGame();
+        await repository.SaveAsync(another, default);
+        Assert.NotNull(await repository.FindAsync(another.Id, default));
+    }
+
+    [Fact]
     public async Task Concurrent_changes_to_the_same_game_are_detected()
     {
         var game = StartGame();

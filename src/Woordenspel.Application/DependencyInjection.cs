@@ -11,6 +11,7 @@ public static class DependencyInjection
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<GameService>();
         services.AddScoped<AccountService>();
+        services.AddScoped<GuestNameGenerator>();
         return services;
     }
 }

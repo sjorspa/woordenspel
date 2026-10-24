@@ -1,12 +1,17 @@
 using Woordenspel.Domain.Boards;
 using Woordenspel.Domain.Games;
 
-namespace Woordenspel.Application;
+namespace Woordenspel.Contracts;
 
+/// <param name="ServerTime">
+/// Het moment waarop deze stand is gemaakt. De resterende tijd van de spelers geldt voor dat moment; een client
+/// telt vanaf daar zelf af.
+/// </param>
 /// <param name="Rack">Het plankje van de speler die het spel bekijkt.</param>
 public sealed record GameDto(
     Guid Id,
     GameStatus Status,
+    DateTimeOffset ServerTime,
     Guid? CurrentPlayerId,
     DateTimeOffset? TurnDeadline,
     int TilesInBag,
@@ -16,17 +21,21 @@ public sealed record GameDto(
     IReadOnlyList<Guid> WinnerIds,
     IReadOnlyList<RackTileDto> Rack);
 
-public sealed record UserDto(Guid Id, string Username);
+/// <param name="IsGuest">Een gast heeft geen wachtwoord en kan niet opnieuw inloggen.</param>
+public sealed record UserDto(Guid Id, string Username, bool IsGuest = false);
 
 public sealed record GameSummaryDto(
     Guid Id,
     GameStatus Status,
+    DateTimeOffset ServerTime,
+    Guid? CurrentPlayerId,
     bool IsYourTurn,
     DateTimeOffset? TurnDeadline,
     IReadOnlyList<PlayerDto> Players,
     IReadOnlyList<Guid> WinnerIds);
 
-public sealed record PlayerDto(Guid Id, string Name, int Score, int TileCount, bool HasResigned);
+/// <param name="TimeRemainingMs">Bedenktijd die de speler nog heeft op <c>ServerTime</c>; null zonder klok.</param>
+public sealed record PlayerDto(Guid Id, string Name, int Score, int TileCount, bool HasResigned, long? TimeRemainingMs);
 
 /// <param name="Rows">
 /// Het bord als tekst: '.' is leeg, een hoofdletter is een gewone steen, een kleine letter een blanco steen.
@@ -38,7 +47,11 @@ public sealed record BoardTileDto(int Row, int Column, char Letter, bool IsBlank
 /// <param name="Letter">De letter, of '?' voor een blanco steen.</param>
 public sealed record RackTileDto(char Letter, bool IsBlank, int Points);
 
-public sealed record MoveDto(Guid PlayerId, MoveType Type, int Score, IReadOnlyList<string> Words, int TileCount);
+/// <param name="Positions">Waar de stenen zijn gelegd; leeg bij andere zetten.</param>
+public sealed record MoveDto(
+    Guid PlayerId, MoveType Type, int Score, IReadOnlyList<string> Words, int TileCount, IReadOnlyList<PositionDto> Positions);
+
+public sealed record PositionDto(int Row, int Column);
 
 public sealed record MoveResultDto(MoveDto Move, GameDto Game);
 

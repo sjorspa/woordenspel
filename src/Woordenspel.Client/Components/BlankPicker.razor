@@ -1,0 +1,21 @@
+@* Kies welke letter een blanco steen voorstelt. *@
+<div class="overlay" @onclick="() => OnCancel.InvokeAsync()">
+    <div class="dialog" @onclick:stopPropagation="true">
+        <h2>Welke letter?</h2>
+        <div class="letter-grid">
+            @foreach (var letter in Letters)
+            {
+                <button class="letter-choice" @onclick="() => OnPick.InvokeAsync(letter)">@letter</button>
+            }
+        </div>
+        <button class="secondary" @onclick="() => OnCancel.InvokeAsync()">Annuleren</button>
+    </div>
+</div>
+
+@code {
+    private static readonly char[] Letters = Enumerable.Range('A', 26).Select(c => (char)c).ToArray();
+
+    [Parameter] public EventCallback<char> OnPick { get; set; }
+
+    [Parameter] public EventCallback OnCancel { get; set; }
+}

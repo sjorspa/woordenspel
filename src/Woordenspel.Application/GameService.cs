@@ -1,4 +1,5 @@
 using Woordenspel.Application.Abstractions;
+using Woordenspel.Contracts;
 using Woordenspel.Domain.Boards;
 using Woordenspel.Domain.Games;
 using Woordenspel.Domain.Moves;
@@ -7,12 +8,16 @@ using Woordenspel.Domain.Words;
 
 namespace Woordenspel.Application;
 
-/// <summary>De use cases van het spel. Laadt het aggregate, laat het domein het werk doen en slaat op.</summary>
+/// <summary>
+/// De use cases van het spel. Laadt het aggregate, laat het domein het werk doen, slaat op en brengt
+/// de spelers op de hoogte.
+/// </summary>
 public sealed class GameService(
     IGameRepository repository,
     IUserRepository users,
     IWordDictionary dictionary,
     IRandomizer randomizer,
+    IGameNotifier notifier,
     TimeProvider timeProvider,
     GameSetup setup)
 {
@@ -34,33 +39,37 @@ public sealed class GameService(
             randomizer,
             timeProvider.GetUtcNow());
 
-        await repository.SaveAsync(game, cancellationToken);
-        return GameMapper.ToDto(game, creatorId);
+        await SaveAndNotifyAsync(game, cancellationToken);
+        return GameMapper.ToDto(game, creatorId, timeProvider.GetUtcNow());
     }
 
     /// <summary>De spelstand zoals deze speler hem ziet, inclusief het eigen plankje.</summary>
     public async Task<GameDto> GetGameAsync(Guid gameId, Guid viewerId, CancellationToken cancellationToken = default)
     {
         var game = await LoadAsync(gameId, cancellationToken);
-        return GameMapper.ToDto(game, viewerId);
+        return GameMapper.ToDto(game, viewerId, timeProvider.GetUtcNow());
     }
 
     /// <summary>Alle spellen van deze speler: lopende spellen waarin hij aan de beurt is eerst.</summary>
     public async Task<IReadOnlyList<GameSummaryDto>> ListGamesAsync(Guid playerId, CancellationToken cancellationToken = default)
     {
         var games = await repository.ListForPlayerAsync(playerId, cancellationToken);
-        var now = timeProvider.GetUtcNow();
 
         foreach (var game in games)
         {
-            if (game.ExpireTurnIfOverdue(now))
+            try
             {
-                await repository.SaveAsync(game, cancellationToken);
+                await ExpireIfOverdueAsync(game, cancellationToken);
+            }
+            catch (ConcurrencyConflictException)
+            {
+                // Tegelijk door de achtergrondtaak beëindigd; de lokale kopie toont al dezelfde uitkomst.
             }
         }
 
+        var now = timeProvider.GetUtcNow();
         return games
-            .Select(g => GameMapper.ToSummary(g, playerId))
+            .Select(g => GameMapper.ToSummary(g, playerId, now))
             .OrderBy(g => g.Status)
             .ThenByDescending(g => g.IsYourTurn)
             .ThenBy(g => g.TurnDeadline)
@@ -87,6 +96,32 @@ public sealed class GameService(
 
     public Task<MoveResultDto> ResignAsync(Guid gameId, Guid playerId, CancellationToken cancellationToken = default) =>
         ExecuteMoveAsync(gameId, playerId, (game, now) => game.Resign(playerId, now), cancellationToken);
+
+    /// <summary>
+    /// Beëindigt alle spellen waarin de speler aan de beurt door zijn tijd heen is, en laat dat de spelers weten.
+    /// Bedoeld om regelmatig op de achtergrond te draaien, zodat een tegenstander het ziet zonder dat iemand iets doet.
+    /// </summary>
+    /// <returns>Het aantal beëindigde spellen.</returns>
+    public async Task<int> ExpireOverdueGamesAsync(CancellationToken cancellationToken = default)
+    {
+        var expired = 0;
+        foreach (var game in await repository.ListOverdueAsync(timeProvider.GetUtcNow(), cancellationToken))
+        {
+            try
+            {
+                if (await ExpireIfOverdueAsync(game, cancellationToken))
+                {
+                    expired++;
+                }
+            }
+            catch (ConcurrencyConflictException)
+            {
+                // Er werd tegelijk een zet gedaan; de volgende ronde kijken we opnieuw.
+            }
+        }
+
+        return expired;
+    }
 
     public WordCheckDto CheckWord(string word)
     {
@@ -119,8 +154,8 @@ public sealed class GameService(
     {
         var game = await LoadAsync(gameId, cancellationToken);
         var record = move(game, timeProvider.GetUtcNow());
-        await repository.SaveAsync(game, cancellationToken);
-        return new MoveResultDto(GameMapper.ToDto(record), GameMapper.ToDto(game, playerId));
+        await SaveAndNotifyAsync(game, cancellationToken);
+        return new MoveResultDto(GameMapper.ToDto(record), GameMapper.ToDto(game, playerId, timeProvider.GetUtcNow()));
     }
 
     /// <summary>
@@ -129,12 +164,39 @@ public sealed class GameService(
     private async Task<Game> LoadAsync(Guid gameId, CancellationToken cancellationToken)
     {
         var game = await repository.FindAsync(gameId, cancellationToken) ?? throw new GameNotFoundException(gameId);
-        if (game.ExpireTurnIfOverdue(timeProvider.GetUtcNow()))
+        try
         {
-            await repository.SaveAsync(game, cancellationToken);
+            await ExpireIfOverdueAsync(game, cancellationToken);
+        }
+        catch (ConcurrencyConflictException)
+        {
+            // Iemand anders (meestal de achtergrondtaak) was ons net voor; gebruik zijn versie.
+            game = await repository.FindAsync(gameId, cancellationToken) ?? throw new GameNotFoundException(gameId);
         }
 
         return game;
+    }
+
+    private async Task<bool> ExpireIfOverdueAsync(Game game, CancellationToken cancellationToken)
+    {
+        if (!game.ExpireTurnIfOverdue(timeProvider.GetUtcNow()))
+        {
+            return false;
+        }
+
+        await SaveAndNotifyAsync(game, cancellationToken);
+        return true;
+    }
+
+    private async Task SaveAndNotifyAsync(Game game, CancellationToken cancellationToken)
+    {
+        await repository.SaveAsync(game, cancellationToken);
+
+        var now = timeProvider.GetUtcNow();
+        foreach (var player in game.Players)
+        {
+            await notifier.GameUpdatedAsync(player.Id, GameMapper.ToDto(game, player.Id, now), cancellationToken);
+        }
     }
 
     private static List<TilePlacement> ToPlacements(IReadOnlyList<TilePlacementDto> tiles) =>

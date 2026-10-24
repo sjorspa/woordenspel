@@ -1,0 +1,125 @@
+@page "/"
+@implements IAsyncDisposable
+@inject ApiClient Api
+@inject AuthState Auth
+@inject IGameUpdates Updates
+@inject NavigationManager Navigation
+@inject TimeProvider Time
+
+<PageTitle>Mijn spellen – Woordenspel</PageTitle>
+
+<section class="card">
+    <h1>Nieuw blitzspel</h1>
+    @if (Auth.User is { } me)
+    {
+        <p class="muted">
+            Jouw naam is <strong class="own-name">@me.Username</strong>.
+            @(me.IsGuest ? "Geef die aan je tegenstander, zodat die jou kan uitdagen." : "Daarmee kunnen anderen jou uitdagen.")
+        </p>
+    }
+    <form class="inline" @onsubmit="CreateGameAsync" @onsubmit:preventDefault="true">
+        <input @bind="_opponent" placeholder="Gebruikersnaam van je tegenstander" aria-label="Tegenstander" required />
+        <button type="submit" disabled="@_busy">Spelen</button>
+    </form>
+    @if (_error is not null)
+    {
+        <p class="error" role="alert">@_error</p>
+    }
+</section>
+
+@if (_games is null)
+{
+    <p class="muted">Spellen laden…</p>
+}
+else
+{
+    <GameList Title="Bezig" Games="Running" ViewerId="ViewerId" ReceivedAt="_receivedAt" Empty="Je hebt geen lopende spellen." />
+    <GameList Title="Afgelopen" Games="Finished" ViewerId="ViewerId" ReceivedAt="_receivedAt" Empty="Nog geen afgelopen spellen." />
+}
+
+@code {
+    private IReadOnlyList<GameSummaryDto>? _games;
+    private DateTimeOffset _receivedAt;
+    private string _opponent = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    private Guid ViewerId => Auth.User?.UserId ?? Guid.Empty;
+
+    private IReadOnlyList<GameSummaryDto> Running => _games!.Where(g => g.Status == GameStatus.InProgress).ToList();
+
+    private IReadOnlyList<GameSummaryDto> Finished => _games!.Where(g => g.Status == GameStatus.Finished).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsLoggedIn)
+        {
+            Navigation.NavigateTo("login");
+            return;
+        }
+
+        Updates.GameUpdated += OnGameUpdated;
+        Updates.Reconnected += LoadAsync;
+        await LoadAsync();
+        await ConnectAsync();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Updates.GameUpdated -= OnGameUpdated;
+        Updates.Reconnected -= LoadAsync;
+        return ValueTask.CompletedTask;
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            _games = await Api.ListGamesAsync();
+            _receivedAt = Time.GetUtcNow();
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+            if (!Auth.IsLoggedIn)
+            {
+                Navigation.NavigateTo("login");
+            }
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConnectAsync()
+    {
+        try
+        {
+            await Updates.EnsureConnectedAsync();
+        }
+        catch (Exception)
+        {
+            _error = "Geen live verbinding; ververs de pagina om de nieuwste stand te zien.";
+        }
+    }
+
+    private Task OnGameUpdated(GameDto _) => LoadAsync();
+
+    private async Task CreateGameAsync()
+    {
+        _busy = true;
+        _error = null;
+        try
+        {
+            var game = await Api.CreateGameAsync(_opponent.Trim());
+            Navigation.NavigateTo($"games/{game.Id}");
+        }
+        catch (ApiException exception)
+        {
+            _error = exception.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

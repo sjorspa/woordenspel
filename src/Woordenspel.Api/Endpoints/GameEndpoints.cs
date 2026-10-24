@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Woordenspel.Api.Auth;
-using Woordenspel.Api.Contracts;
+using Woordenspel.Contracts;
 using Woordenspel.Application;
 
 namespace Woordenspel.Api.Endpoints;
