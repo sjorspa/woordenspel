@@ -1,0 +1,7 @@
+# Afkortingen mét klinker die de automatische regel niet herkent. Eén per regel, hoofdletters.
+IC
+ID
+OV
+SO
+UB
+UV

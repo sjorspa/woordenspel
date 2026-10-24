@@ -1,0 +1,9 @@
+# Woorden zonder klinker die wél zijn toegestaan. Alle andere woorden zonder klinker
+# (a, e, i, o, u, y) worden als afkorting of symbool beschouwd, zoals BTW, CD en KG.
+BRR
+HM
+MMM
+PST
+ST
+TSS
+ZZZ

@@ -1,0 +1,69 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Woordenspel.Api.Contracts;
+using Woordenspel.Domain.Tiles;
+using Woordenspel.Domain.Words;
+using Woordenspel.TestSupport;
+
+namespace Woordenspel.Api.Tests;
+
+/// <summary>
+/// De echte API met een eigen SQLite-database in een tijdelijke map, een kleine woordenlijst, een nep-klok
+/// en een letterzak die niet schudt: wie het spel aanmaakt begint en krijgt AAAAAAA, de tegenstander BBCCDDD.
+/// </summary>
+public sealed class WoordenspelApiFactory : WebApplicationFactory<Program>
+{
+    private readonly string _dataDirectory = Path.Combine(Path.GetTempPath(), $"woordenspel-tests-{Guid.NewGuid():N}");
+
+    public static JsonSerializerOptions JsonOptions { get; } = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() },
+    };
+
+    public FakeTimeProvider Clock { get; } = new();
+
+    /// <summary>Registreert een nieuwe gebruiker met een unieke naam en geeft een client die als die gebruiker is ingelogd.</summary>
+    public async Task<(HttpClient Client, AuthResponse User)> CreateUserClientAsync()
+    {
+        var client = CreateClient();
+        var username = $"u{Guid.NewGuid():N}"[..13];
+        var response = await client.PostAsJsonAsync("/api/account/register", new { username, password = "geheim123" });
+        response.EnsureSuccessStatusCode();
+
+        var user = (await response.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions))!;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", user.Token);
+        return (client, user);
+    }
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseSetting("Storage:DataDirectory", _dataDirectory);
+        builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IWordDictionary>();
+            services.AddSingleton<IWordDictionary>(new FakeWordDictionary("AA", "AAP"));
+            services.RemoveAll<IRandomizer>();
+            services.AddSingleton<IRandomizer, PredictableRandomizer>();
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(Clock);
+        });
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        base.Dispose(disposing);
+        SqliteConnection.ClearAllPools();
+        if (Directory.Exists(_dataDirectory))
+        {
+            Directory.Delete(_dataDirectory, recursive: true);
+        }
+    }
+}

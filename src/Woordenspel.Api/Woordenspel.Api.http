@@ -1,0 +1,85 @@
+# Met Docker: http://localhost:8080. Met 'dotnet run': http://localhost:5192.
+@baseUrl = http://localhost:8080
+# Plak hier het token uit het antwoord van register/login, en een spel-id.
+@token = plak-hier-je-token
+@gameId = 00000000-0000-0000-0000-000000000000
+
+### Registreren
+POST {{baseUrl}}/api/account/register
+Content-Type: application/json
+
+{ "username": "anna", "password": "geheim123" }
+
+### Tegenstander registreren
+POST {{baseUrl}}/api/account/register
+Content-Type: application/json
+
+{ "username": "bram", "password": "geheim123" }
+
+### Inloggen
+POST {{baseUrl}}/api/account/login
+Content-Type: application/json
+
+{ "username": "anna", "password": "geheim123" }
+
+### Wie ben ik?
+GET {{baseUrl}}/api/account/me
+Authorization: Bearer {{token}}
+
+### Nieuw spel
+POST {{baseUrl}}/api/games
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "opponent": "bram" }
+
+### Mijn spellen
+GET {{baseUrl}}/api/games
+Authorization: Bearer {{token}}
+
+### Spelstand met eigen plankje
+GET {{baseUrl}}/api/games/{{gameId}}
+Authorization: Bearer {{token}}
+
+### Score vooraf berekenen
+POST {{baseUrl}}/api/games/{{gameId}}/preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "tiles": [
+  { "row": 7, "column": 7, "letter": "K" },
+  { "row": 7, "column": 8, "letter": "A" },
+  { "row": 7, "column": 9, "letter": "T", "isBlank": true }
+] }
+
+### Woord leggen
+POST {{baseUrl}}/api/games/{{gameId}}/place
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "tiles": [
+  { "row": 7, "column": 7, "letter": "K" },
+  { "row": 7, "column": 8, "letter": "A" },
+  { "row": 7, "column": 9, "letter": "T" }
+] }
+
+### Ruilen
+POST {{baseUrl}}/api/games/{{gameId}}/swap
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "letters": ["Q", "?"] }
+
+### Passen
+POST {{baseUrl}}/api/games/{{gameId}}/pass
+Authorization: Bearer {{token}}
+
+### Opgeven
+POST {{baseUrl}}/api/games/{{gameId}}/resign
+Authorization: Bearer {{token}}
+
+### Woord controleren
+GET {{baseUrl}}/api/words/woordenspel
+
+### Bord, letters en regels
+GET {{baseUrl}}/api/setup

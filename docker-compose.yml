@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    image: woordenspel-api
+    ports:
+      - "8080:8080"
+    volumes:
+      - woordenspel-data:/data
+    restart: unless-stopped
+
+volumes:
+  woordenspel-data:

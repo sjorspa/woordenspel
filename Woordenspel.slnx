@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Woordenspel.Api/Woordenspel.Api.csproj" />
+    <Project Path="src/Woordenspel.Application/Woordenspel.Application.csproj" />
+    <Project Path="src/Woordenspel.Domain/Woordenspel.Domain.csproj" />
+    <Project Path="src/Woordenspel.Infrastructure/Woordenspel.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Woordenspel.Api.Tests/Woordenspel.Api.Tests.csproj" />
+    <Project Path="tests/Woordenspel.Application.Tests/Woordenspel.Application.Tests.csproj" />
+    <Project Path="tests/Woordenspel.Domain.Tests/Woordenspel.Domain.Tests.csproj" />
+    <Project Path="tests/Woordenspel.Infrastructure.Tests/Woordenspel.Infrastructure.Tests.csproj" />
+    <Project Path="tests/Woordenspel.TestSupport/Woordenspel.TestSupport.csproj" />
+  </Folder>
+</Solution>
